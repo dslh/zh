@@ -169,3 +169,51 @@ All `show` subcommands support an --interactive flag which can be passed in plac
 ### Autocomplete
 
 The command should come with subcommand autocompletion support for major shells
+
+## Technical details
+
+### Language
+
+Go. The stated goal is to be "like GitHub's `gh`", which is written in Go. Beyond that, Go is well-suited for CLI tools:
+- Single binary distribution with no runtime dependencies
+- Fast startup time
+- Excellent CLI ecosystem
+- Trivial cross-platform compilation
+
+### Libraries
+
+| Purpose | Library | Notes |
+|---------|---------|-------|
+| CLI framework | Cobra | Industry standard, powers `gh`, `kubectl`, `docker`. Handles subcommands, flags, help generation, and shell completions |
+| Config management | Viper | Pairs with Cobra, handles config files, env vars, and flag binding |
+| Terminal markdown | Glamour | What `gh` uses for rendering markdown in the terminal |
+| Interactive selection | Bubble Tea + Lip Gloss | For `--interactive` prompts and the cold start wizard |
+| GitHub API | go-github | For direct GitHub access beyond what `gh` provides |
+| HTTP client | Standard library | `net/http` is sufficient for ZenHub's GraphQL API |
+
+### Configuration
+
+Follow the XDG Base Directory spec. Config lives at `~/.config/zh/config.yml` (or `$XDG_CONFIG_HOME/zh/config.yml`).
+
+```yaml
+api_key: zh_xxx
+workspace: Z2lkOi8vcmFwdG9yL1dvcmtzcGFjZS8xMjM0
+github:
+  method: gh  # or "pat" or "none"
+  token: ghp_xxx  # only if method=pat
+aliases:
+  pipelines:
+    ip: "In Progress"
+    review: "Code Review"
+  epics:
+    auth: "Z2lkOi8vcmFwdG9yL1plbmh1YkVwaWMvMTIzNDU"
+```
+
+### Cache
+
+Cache lives at `~/.cache/zh/` (or `$XDG_CACHE_HOME/zh/`). Simple JSON files, one per resource type:
+- `workspaces.json` — workspace metadata
+- `pipelines-{workspace_id}.json` — pipelines per workspace
+- `repos-{workspace_id}.json` — repo name to GitHub ID mappings
+
+A `zh cache clear` command should be available for manual cache invalidation.

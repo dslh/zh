@@ -12,6 +12,18 @@ View the workspace board — pipelines and their issues.
 |---|---|
 | `zh board` | Display all pipelines with their issues (default view) |
 | `zh board --pipeline=<name>` | Filter to a single pipeline |
+| `zh board --view=<name>` | Apply a saved view (filter preset) |
+
+### `zh view`
+
+Manage saved views (board filter presets).
+
+| Subcommand | Description |
+|---|---|
+| `zh view list` | List your saved views |
+| `zh view show <name>` | Show the filters in a saved view |
+| `zh view create <name>` | Create a saved view from filter flags. `--assignee=<user>`, `--label=<label>`, `--repo=<repo>`, etc. |
+| `zh view delete <name>` | Delete a saved view |
 
 ### `zh pipeline`
 
@@ -112,3 +124,6 @@ ZenHub's API offers limited search capabilities. For example, to find the `repos
 
 When run for the first time, `zh` enters an interactive mode. First it asks for an API key. Then it fetches a list of available workspaces from the API, and asks the user to select a default workspace from the list. Then, the tool asks if it should access GitHub via the `gh` CLI tool, using a PAT (personal access token), or not at all. If PAT is specified, the tool asks for one. If "not at all" is selected, the user should be informed of the features that will not work.
 
+### Autocomplete
+
+The command should come with subcommand autocompletion support for major shells

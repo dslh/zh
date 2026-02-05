@@ -12,7 +12,7 @@ View the workspace board — pipelines and their issues.
 |---|---|
 | `zh board` | Display all pipelines with their issues (default view) |
 | `zh board --pipeline=<name>` | Filter to a single pipeline |
-| `zh board --view=<name>` | Apply a saved view (filter preset) |
+| `zh board --view=<name>` | Apply a saved view (filter preset). Can be combined with --pipeline |
 
 ### `zh view`
 
@@ -32,6 +32,7 @@ Manage pipelines (board columns).
 | Subcommand | Description |
 |---|---|
 | `zh pipeline list` | List all pipelines in the workspace |
+| `zh pipeline show <name>` | View details about a pipeline and the issues in it |
 | `zh pipeline create <name>` | Create a new pipeline. `--position=<n>`, `--description=<text>` |
 | `zh pipeline edit <name>` | Update a pipeline's name, position, or description |
 | `zh pipeline delete <name> --into=<name>` | Delete a pipeline, moving its issues into the target pipeline |
@@ -43,7 +44,8 @@ View and manage issues.
 
 | Subcommand | Description |
 |---|---|
-| `zh issue view <issue>` | View issue details: title, state, estimate, pipeline, assignees, labels, connected PRs, blockers |
+| `zh issue list` | List issues in the workspace. `--pipeline=<name>`, `--sprint=<id>`, `--epic=<epic>`, `--assignee=<user>`, `--label=<label>`, `--estimate=<value>`, `--blocked`, `--no-estimate`, `--view=<name>` |
+| `zh issue show <issue>` | View issue details: title, state, estimate, pipeline, assignees, labels, connected PRs, blockers |
 | `zh issue move <issue>... <pipeline>` | Move one or more issues to a pipeline. `--position=<top\|bottom\|n>` |
 | `zh issue estimate <issue> <value>` | Set the estimate on an issue. Omit value to clear |
 | `zh issue close <issue>...` | Close one or more issues |
@@ -62,7 +64,7 @@ Manage ZenHub Epics.
 | Subcommand | Description |
 |---|---|
 | `zh epic list` | List epics in the workspace |
-| `zh epic view <epic>` | View epic details: title, state, dates, child issues, assignees |
+| `zh epic show <epic>` | View epic details: title, state, dates, child issues, assignees |
 | `zh epic create <title>` | Create an epic. `--body=<text>`, `--repo=<repo>` |
 | `zh epic edit <epic>` | Update title/body. `--title=<text>`, `--body=<text>` |
 | `zh epic delete <epic>` | Delete an epic |
@@ -70,6 +72,7 @@ Manage ZenHub Epics.
 | `zh epic set-dates <epic>` | Set start/end dates. `--start=<date>`, `--end=<date>` |
 | `zh epic add <epic> <issue>...` | Add issues to an epic |
 | `zh epic remove <epic> <issue>...` | Remove issues from an epic |
+| `zh epic alias <epic> <alias>` | Set a shorthand name that can be used to reference the epic in future calls to `zh` |
 
 ### `zh sprint`
 
@@ -78,7 +81,7 @@ View and manage sprints.
 | Subcommand | Description |
 |---|---|
 | `zh sprint list` | List sprints (active, upcoming, recent) |
-| `zh sprint view [sprint]` | View sprint details and issues. Defaults to active sprint |
+| `zh sprint show [sprint]` | View sprint details and issues. Defaults to active sprint |
 | `zh sprint add <issue>...` | Add issues to the active sprint. `--sprint=<id>` to target a specific sprint |
 | `zh sprint remove <issue>...` | Remove issues from a sprint |
 
@@ -89,8 +92,8 @@ Workspace information and configuration.
 | Subcommand | Description |
 |---|---|
 | `zh workspace list` | List available workspaces |
-| `zh workspace view` | Show current workspace details: name, repos, pipelines, sprint config |
-| `zh workspace select` | Switch the default workspace |
+| `zh workspace show [name]` | Show workspace details: name, repos, pipelines, sprint config. Defaults to current workspace |
+| `zh workspace switch <name>` | Switch the default workspace |
 | `zh workspace repos` | List repos connected to the workspace |
 
 ## General features
@@ -116,6 +119,23 @@ Pipelines can be specified:
  - By any substring of the name that is unique within the workspace
  - By an alias set with `zh pipeline alias`
 
+### Epic identifiers
+
+ZenHub has two types of epics: legacy epics (backed by a GitHub issue) and standalone ZenHub epics. Commands that operate on epics accept any of the following identifiers:
+ - ZenHub ID, e.g. Z2lkOi8vcmFwdG9yL1plbmh1YkVwaWMvMTIzNDU
+ - Exact title match
+ - Any substring of the title that is unique within the workspace
+ - GitHub owner/repo#id or repo#id format, for legacy epics that are backed by a GitHub issue
+ - An alias set with `zh epic alias`
+
+### Sprint identifiers
+
+Sprints can be specified:
+ - By their ZenHub ID
+ - By their name, e.g. "Sprint 42"
+ - By any unique substring of the name
+ - By relative reference: `current` (or omit for commands that default to active sprint), `next`, `previous`
+
 ### Caching
 
 ZenHub's API offers limited search capabilities. For example, to find the `repositoryGhId` for a repo based on its human-readable name (e.g. `gohiring/mpt`) requires listing all repos in a workspace and searching over all results. So `zh` will cache information about workspaces, pipelines, and GitHub repositories for faster lookup. Caching should be indefinite, fetching from the API should only take place when something can't be found in the cache.
@@ -123,6 +143,28 @@ ZenHub's API offers limited search capabilities. For example, to find the `repos
 ### Cold start
 
 When run for the first time, `zh` enters an interactive mode. First it asks for an API key. Then it fetches a list of available workspaces from the API, and asks the user to select a default workspace from the list. Then, the tool asks if it should access GitHub via the `gh` CLI tool, using a PAT (personal access token), or not at all. If PAT is specified, the tool asks for one. If "not at all" is selected, the user should be informed of the features that will not work.
+
+### --help
+
+A --help flag is available for all subcommands, command groups, and for zh itself, providing complete documentation for the tool.
+
+### --dry-run
+
+A --dry-run flag is available for commands that modify state. When specified, the command displays what actions would be taken without executing them. This is useful for:
+ - Previewing destructive operations like `zh pipeline delete` or `zh epic delete`
+ - Verifying bulk operations like `zh issue move` or `zh issue close` before committing
+ - Confirming which entity was matched when using substring identifiers for pipelines or epics
+
+Commands that support --dry-run:
+ - `zh view create`, `zh view delete`
+ - `zh pipeline create`, `zh pipeline edit`, `zh pipeline delete`
+ - `zh issue move`, `zh issue estimate`, `zh issue close`, `zh issue reopen`, `zh issue connect`, `zh issue disconnect`, `zh issue block`, `zh issue priority`, `zh issue label add`, `zh issue label remove`
+ - `zh epic create`, `zh epic edit`, `zh epic delete`, `zh epic set-state`, `zh epic set-dates`, `zh epic add`, `zh epic remove`
+ - `zh sprint add`, `zh sprint remove`
+
+### show --interactive/-i
+
+All `show` subcommands support an --interactive flag which can be passed in place of an entity identifier. When passed, the user is presented with the entities returned by the corresponding `list` subcommand and can use the arrow and enter keys to select one to be shown.
 
 ### Autocomplete
 

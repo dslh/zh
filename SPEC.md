@@ -106,6 +106,22 @@ Workspace information and configuration.
 | `zh workspace repos` | List repos connected to the workspace |
 | `zh workspace stats` | Show workspace metrics (velocity, automations) |
 
+### `zh cache`
+
+Manage the local cache.
+
+| Subcommand | Description |
+|---|---|
+| `zh cache clear` | Clear all cached data. `--workspace` to clear only current workspace cache |
+
+### `zh version`
+
+Display version information.
+
+| Subcommand | Description |
+|---|---|
+| `zh version` | Show version, build date, and commit hash |
+
 ### `zh label`
 
 View labels available in the workspace.
@@ -142,7 +158,7 @@ Commands that operate on issues and PRs accept any of the following identifiers:
 Pipelines can be specified:
  - By their identifier
  - By their exact name
- - By any substring of the name that is unique within the workspace
+ - By any substring of the name that is unique within the workspace (if multiple pipelines match, the command errors with a list of candidates)
  - By an alias set with `zh pipeline alias`
 
 ### Epic identifiers
@@ -150,7 +166,7 @@ Pipelines can be specified:
 ZenHub has two types of epics: legacy epics (backed by a GitHub issue) and standalone ZenHub epics. Commands that operate on epics accept any of the following identifiers:
  - ZenHub ID, e.g. Z2lkOi8vcmFwdG9yL1plbmh1YkVwaWMvMTIzNDU
  - Exact title match
- - Any substring of the title that is unique within the workspace
+ - Any substring of the title that is unique within the workspace (if multiple epics match, the command errors with a list of candidates)
  - GitHub owner/repo#id or repo#id format, for legacy epics that are backed by a GitHub issue
  - An alias set with `zh epic alias`
 
@@ -159,7 +175,7 @@ ZenHub has two types of epics: legacy epics (backed by a GitHub issue) and stand
 Sprints can be specified:
  - By their ZenHub ID
  - By their name, e.g. "Sprint 42"
- - By any unique substring of the name
+ - By any unique substring of the name (if multiple sprints match, the command errors with a list of candidates)
  - By relative reference: `current` (or omit for commands that default to active sprint), `next`, `previous`
 
 ### Caching
@@ -218,6 +234,13 @@ Go. The stated goal is to be "like GitHub's `gh`", which is written in Go. Beyon
 - Fast startup time
 - Excellent CLI ecosystem
 - Trivial cross-platform compilation
+
+### ZenHub API
+
+ZenHub uses a GraphQL API:
+- **Endpoint:** `https://api.zenhub.com/public/graphql`
+- **Authentication:** Bearer token in `Authorization` header
+- **Rate limits:** Standard GraphQL rate limiting applies
 
 ### Libraries
 

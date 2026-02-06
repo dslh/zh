@@ -180,7 +180,9 @@ Sprints can be specified:
 
 ### Caching
 
-ZenHub's API offers limited search capabilities. For example, to find the `repositoryGhId` for a repo based on its human-readable name (e.g. `gohiring/mpt`) requires listing all repos in a workspace and searching over all results. So `zh` will cache information about workspaces, pipelines, and GitHub repositories for faster lookup. Caching should be indefinite, fetching from the API should only take place when something can't be found in the cache.
+ZenHub's API offers limited search capabilities. For example, to find the `repositoryGhId` for a repo based on its human-readable name (e.g. `gohiring/mpt`) requires listing all repos in a workspace and searching over all results. So `zh` will cache information about workspaces, pipelines, and GitHub repositories for faster lookup.
+
+Cache invalidation strategy: **invalidate on miss**. When a lookup fails to find an entity in the cache, the entire cache for that resource type is refreshed from the API. This handles renamed entities gracefully (old name misses, triggering a refresh that pulls in the new name) and avoids stale data without requiring TTLs or background refresh.
 
 ### Cold start
 
@@ -304,6 +306,10 @@ Consistent exit codes for scripting:
 - `3` — Authentication failure
 - `4` — Entity not found (issue, pipeline, epic doesn't exist or couldn't be resolved)
 
+### Batch operations
+
+Commands that accept multiple items (e.g., `zh issue move <issue>...`, `zh issue close <issue>...`) stop on first error. This ensures predictable state after failure and avoids wasting API calls when the root cause is systemic (auth, permissions, network). Users can re-run the command with remaining items after fixing the issue.
+
 ### Debug mode
 
 A `--verbose` flag is available on all commands. When set, logs API requests and responses to stderr. Useful for troubleshooting and bug reports.
@@ -319,3 +325,11 @@ goreleaser handles all of the above from a single configuration.
 ### Pagination
 
 List commands transparently fetch all pages from the API by default. A `--limit=<n>` flag is available to cap results when only a subset is needed.
+
+### Testing
+
+Unit tests with mocked API responses. The ZenHub GraphQL API is available via MCP for schema introspection and read-only validation during development.
+
+## API Research
+
+Research has been undertaken to understand how each subcommand might be implemented in terms of ZenHub API calls that would need to be made. See the research/ directory.

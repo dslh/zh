@@ -109,7 +109,7 @@ Commands that operate on issues and PRs accept any of the following identifiers:
  - GitHub owner/repo#id format, e.g. gohiring/mpt#1234
  - GitHub repo#id format, e.g. mpt#1234, provided the workspace is not linked to multiple repos with the same name but different owners
  - `--repo` param with GitHub number, as in `--repo=mpt 1234` or `--repo=gohiring/mpt 1234`, useful when referencing multiple issues/PRs in the same repo, e.g. `--repo=mpt 1234 2345`
- - When `--repo` flag is used to provide a GitHub repository, PRs can then be specified by the branch name. Requires GitHub API access.
+ - When `--repo` flag is used to provide a GitHub repository, PRs can then be specified by the branch name. Requires GitHub API or CLI access, e.g. `gh pr list --repo {owner}/{repo} --head {branch}`
 
 ### Pipeline identifiers
 
@@ -217,3 +217,37 @@ Cache lives at `~/.cache/zh/` (or `$XDG_CACHE_HOME/zh/`). Simple JSON files, one
 - `repos-{workspace_id}.json` — repo name to GitHub ID mappings
 
 A `zh cache clear` command should be available for manual cache invalidation.
+
+### Environment variables
+
+For CI/CD and scripting, credentials and settings can be provided via environment variables:
+- `ZH_API_KEY` — ZenHub API key
+- `ZH_WORKSPACE` — Default workspace ID
+- `ZH_GITHUB_TOKEN` — GitHub PAT (when not using `gh` CLI)
+
+Environment variables take precedence over config file values.
+
+### Exit codes
+
+Consistent exit codes for scripting:
+- `0` — Success
+- `1` — General error (API failure, network issues)
+- `2` — Usage error (invalid flags, missing arguments)
+- `3` — Authentication failure
+- `4` — Entity not found (issue, pipeline, epic doesn't exist or couldn't be resolved)
+
+### Debug mode
+
+A `--verbose` flag is available on all commands. When set, logs API requests and responses to stderr. Useful for troubleshooting and bug reports.
+
+### Distribution
+
+- **Homebrew** — Primary distribution channel for macOS/Linux (`brew install zh`)
+- **go install** — For Go developers (`go install github.com/.../zh@latest`)
+- **Binary releases** — Prebuilt binaries for major platforms, attached to GitHub releases
+
+goreleaser handles all of the above from a single configuration.
+
+### Pagination
+
+List commands transparently fetch all pages from the API by default. A `--limit=<n>` flag is available to cap results when only a subset is needed.

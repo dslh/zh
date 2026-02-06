@@ -25,6 +25,8 @@ Manage pipelines (board columns).
 | `zh pipeline edit <name>` | Update a pipeline's name, position, or description |
 | `zh pipeline delete <name> --into=<name>` | Delete a pipeline, moving its issues into the target pipeline |
 | `zh pipeline alias <name> <alias>` | Set a shorthand name that can be used to reference the pipeline in future calls to `zh` |
+| `zh pipeline automations <name>` | List configured automations for a pipeline |
+| `zh pipeline move-all <from> <to>` | Move all issues from one pipeline to another |
 
 ### `zh issue`
 
@@ -32,7 +34,7 @@ View and manage issues.
 
 | Subcommand | Description |
 |---|---|
-| `zh issue list` | List issues in the workspace. `--pipeline=<name>`, `--sprint=<id>`, `--epic=<epic>`, `--assignee=<user>`, `--label=<label>`, `--estimate=<value>`, `--blocked`, `--no-estimate` |
+| `zh issue list` | List issues in the workspace. `--pipeline=<name>`, `--sprint=<id>`, `--epic=<epic>`, `--assignee=<user>`, `--label=<label>`, `--estimate=<value>`, `--no-estimate` |
 | `zh issue show <issue>` | View issue details: title, state, estimate, pipeline, assignees, labels, connected PRs, blockers |
 | `zh issue move <issue>... <pipeline>` | Move one or more issues to a pipeline. `--position=<top\|bottom\|n>` |
 | `zh issue estimate <issue> <value>` | Set the estimate on an issue. Omit value to clear |
@@ -44,6 +46,11 @@ View and manage issues.
 | `zh issue priority <issue>... <priority>` | Set priority on issues. Omit priority to clear |
 | `zh issue label add <issue>... <label>...` | Add labels to issues |
 | `zh issue label remove <issue>... <label>...` | Remove labels from issues |
+| `zh issue activity <issue>` | Show ZenHub activity feed (pipeline moves, estimate changes, etc.). `--github` to include GitHub timeline events |
+| `zh issue blockers <issue>` | List issues and epics blocking this issue |
+| `zh issue blocking <issue>` | List issues and epics that this issue is blocking |
+
+**Note:** When using `zh issue block`, blocks can be created but cannot be removed via the API. Use ZenHub's web UI to remove blocking relationships.
 
 ### `zh epic`
 
@@ -61,6 +68,17 @@ Manage ZenHub Epics.
 | `zh epic add <epic> <issue>...` | Add issues to an epic |
 | `zh epic remove <epic> <issue>...` | Remove issues from an epic |
 | `zh epic alias <epic> <alias>` | Set a shorthand name that can be used to reference the epic in future calls to `zh` |
+| `zh epic progress <epic>` | Show completion status (issue count and estimate progress) |
+| `zh epic estimate <epic> <value>` | Set estimate on an epic. Omit value to clear |
+| `zh epic assignee add <epic> <user>...` | Add assignees to an epic |
+| `zh epic assignee remove <epic> <user>...` | Remove assignees from an epic |
+| `zh epic label add <epic> <label>...` | Add labels to an epic |
+| `zh epic label remove <epic> <label>...` | Remove labels from an epic |
+| `zh epic key-date list <epic>` | List key dates (milestones) within an epic |
+| `zh epic key-date add <epic> <name> <date>` | Add a key date to an epic |
+| `zh epic key-date remove <epic> <name>` | Remove a key date from an epic |
+
+**Legacy epics:** ZenHub has two types of epics—standalone ZenHub epics and legacy epics backed by a GitHub issue. For legacy epics, `edit`, `set-state`, `add`, and `remove` require GitHub API access (via `gh` CLI or PAT). These commands will fail with an error if GitHub access is not configured.
 
 ### `zh sprint`
 
@@ -72,6 +90,9 @@ View and manage sprints.
 | `zh sprint show [sprint]` | View sprint details and issues. Defaults to active sprint |
 | `zh sprint add <issue>...` | Add issues to the active sprint. `--sprint=<id>` to target a specific sprint |
 | `zh sprint remove <issue>...` | Remove issues from a sprint |
+| `zh sprint velocity` | Show velocity trends for recent sprints |
+| `zh sprint scope [sprint]` | Show scope change history for a sprint. Defaults to active sprint |
+| `zh sprint review [sprint]` | View sprint retrospective. Defaults to active sprint |
 
 ### `zh workspace`
 
@@ -79,10 +100,27 @@ Workspace information and configuration.
 
 | Subcommand | Description |
 |---|---|
-| `zh workspace list` | List available workspaces |
+| `zh workspace list` | List available workspaces. `--favorites`, `--recent` |
 | `zh workspace show [name]` | Show workspace details: name, repos, pipelines, sprint config. Defaults to current workspace |
 | `zh workspace switch <name>` | Switch the default workspace |
 | `zh workspace repos` | List repos connected to the workspace |
+| `zh workspace stats` | Show workspace metrics (velocity, automations) |
+
+### `zh label`
+
+View labels available in the workspace.
+
+| Subcommand | Description |
+|---|---|
+| `zh label list` | List all labels in the workspace |
+
+### `zh priority`
+
+View priorities configured for the workspace.
+
+| Subcommand | Description |
+|---|---|
+| `zh priority list` | List workspace priorities with their colors |
 
 ## General features
 
@@ -132,6 +170,20 @@ ZenHub's API offers limited search capabilities. For example, to find the `repos
 
 When run for the first time, `zh` enters an interactive mode. First it asks for an API key. Then it fetches a list of available workspaces from the API, and asks the user to select a default workspace from the list. Then, the tool asks if it should access GitHub via the `gh` CLI tool, using a PAT (personal access token), or not at all. If PAT is specified, the tool asks for one. If "not at all" is selected, the user should be informed of the features that will not work.
 
+### GitHub access
+
+Some features require GitHub API access (via `gh` CLI or PAT). Without GitHub access configured:
+
+**Will not work:**
+- `zh epic edit`, `zh epic set-state`, `zh epic add`, `zh epic remove` for legacy epics (those backed by a GitHub issue)
+- `zh issue activity --github` (the flag will be ignored)
+- Branch name resolution when specifying PRs via `--repo`
+
+**Will have limited output:**
+- `zh issue show` for PRs will not include review status, merge status, or CI status
+- `zh issue show` will not include issue author, reactions, or participants
+- `zh workspace repos` will not include repo language, description, or stars
+
 ### --help
 
 A --help flag is available for all subcommands, command groups, and for zh itself, providing complete documentation for the tool.
@@ -144,9 +196,9 @@ A --dry-run flag is available for commands that modify state. When specified, th
  - Confirming which entity was matched when using substring identifiers for pipelines or epics
 
 Commands that support --dry-run:
- - `zh pipeline create`, `zh pipeline edit`, `zh pipeline delete`
+ - `zh pipeline create`, `zh pipeline edit`, `zh pipeline delete`, `zh pipeline move-all`
  - `zh issue move`, `zh issue estimate`, `zh issue close`, `zh issue reopen`, `zh issue connect`, `zh issue disconnect`, `zh issue block`, `zh issue priority`, `zh issue label add`, `zh issue label remove`
- - `zh epic create`, `zh epic edit`, `zh epic delete`, `zh epic set-state`, `zh epic set-dates`, `zh epic add`, `zh epic remove`
+ - `zh epic create`, `zh epic edit`, `zh epic delete`, `zh epic set-state`, `zh epic set-dates`, `zh epic add`, `zh epic remove`, `zh epic estimate`, `zh epic assignee add`, `zh epic assignee remove`, `zh epic label add`, `zh epic label remove`, `zh epic key-date add`, `zh epic key-date remove`
  - `zh sprint add`, `zh sprint remove`
 
 ### show --interactive/-i
@@ -202,6 +254,12 @@ Cache lives at `~/.cache/zh/` (or `$XDG_CACHE_HOME/zh/`). Simple JSON files, one
 - `workspaces.json` — workspace metadata
 - `pipelines-{workspace_id}.json` — pipelines per workspace
 - `repos-{workspace_id}.json` — repo name to GitHub ID mappings
+- `sprints-{workspace_id}.json` — sprint ID, name, state, dates (short TTL; sprints change frequently)
+- `epics-{workspace_id}.json` — epic ID, title, type (ZenHub vs legacy)
+- `users-{workspace_id}.json` — GitHub login to ZenHub user ID mapping (required for assignee resolution)
+- `labels-{repo_id}.json` — label name to ID mapping (repo-scoped)
+- `priorities-{workspace_id}.json` — priority name, ID, color (workspace-scoped)
+- `estimates-{repo_id}.json` — valid estimate values (for validation and autocompletion)
 
 A `zh cache clear` command should be available for manual cache invalidation.
 

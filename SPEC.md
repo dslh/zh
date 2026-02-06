@@ -12,18 +12,6 @@ View the workspace board — pipelines and their issues.
 |---|---|
 | `zh board` | Display all pipelines with their issues (default view) |
 | `zh board --pipeline=<name>` | Filter to a single pipeline |
-| `zh board --view=<name>` | Apply a saved view (filter preset). Can be combined with --pipeline |
-
-### `zh view`
-
-Manage saved views (board filter presets).
-
-| Subcommand | Description |
-|---|---|
-| `zh view list` | List your saved views |
-| `zh view show <name>` | Show the filters in a saved view |
-| `zh view create <name>` | Create a saved view from filter flags. `--assignee=<user>`, `--label=<label>`, `--repo=<repo>`, etc. |
-| `zh view delete <name>` | Delete a saved view |
 
 ### `zh pipeline`
 
@@ -44,7 +32,7 @@ View and manage issues.
 
 | Subcommand | Description |
 |---|---|
-| `zh issue list` | List issues in the workspace. `--pipeline=<name>`, `--sprint=<id>`, `--epic=<epic>`, `--assignee=<user>`, `--label=<label>`, `--estimate=<value>`, `--blocked`, `--no-estimate`, `--view=<name>` |
+| `zh issue list` | List issues in the workspace. `--pipeline=<name>`, `--sprint=<id>`, `--epic=<epic>`, `--assignee=<user>`, `--label=<label>`, `--estimate=<value>`, `--blocked`, `--no-estimate` |
 | `zh issue show <issue>` | View issue details: title, state, estimate, pipeline, assignees, labels, connected PRs, blockers |
 | `zh issue move <issue>... <pipeline>` | Move one or more issues to a pipeline. `--position=<top\|bottom\|n>` |
 | `zh issue estimate <issue> <value>` | Set the estimate on an issue. Omit value to clear |
@@ -156,7 +144,6 @@ A --dry-run flag is available for commands that modify state. When specified, th
  - Confirming which entity was matched when using substring identifiers for pipelines or epics
 
 Commands that support --dry-run:
- - `zh view create`, `zh view delete`
  - `zh pipeline create`, `zh pipeline edit`, `zh pipeline delete`
  - `zh issue move`, `zh issue estimate`, `zh issue close`, `zh issue reopen`, `zh issue connect`, `zh issue disconnect`, `zh issue block`, `zh issue priority`, `zh issue label add`, `zh issue label remove`
  - `zh epic create`, `zh epic edit`, `zh epic delete`, `zh epic set-state`, `zh epic set-dates`, `zh epic add`, `zh epic remove`

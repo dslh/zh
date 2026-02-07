@@ -329,6 +329,25 @@ List commands transparently fetch all pages from the API by default. A `--limit=
 
 Unit tests with mocked API responses. The ZenHub GraphQL API is available via MCP for schema introspection and read-only validation during development.
 
+#### Test accounts and resources
+
+A dedicated GitHub account (`dlakehammond`) and ZenHub account are available for integration testing. The `gh` CLI is authenticated as `dlakehammond`.
+
+**ZenHub workspace:** "Dev Test" (`69866ab95c14bf002977146b`)
+- Organization: `hambend@gmail.com` (`Z2lkOi8vcmFwdG9yL1plbmh1Yk9yZ2FuaXphdGlvbi8xNjQ5NDc`)
+- Pipelines: Todo, Doing
+
+**Repositories:**
+
+| Repo | GitHub ID | Issues | PRs |
+|------|-----------|--------|-----|
+| `dlakehammond/task-tracker` | 1152464818 | #1 enhancement, #2 bug, #3 enhancement, #4 question | #5 fixes #2, #6 closes #1 |
+| `dlakehammond/recipe-book` | 1152470189 | #1 enhancement, #2 bug, #3 enhancement | #4 fixes #2 |
+
+Both repos are connected to the Dev Test workspace. MCP servers for both ZenHub and GitHub GraphQL APIs are configured and authenticated. The repositories are each cloned locally in the repos/ directory.
+
+The accounts, and everything in them, exist only for the purpose of building the `zh` CLI tool. It is permitted to execute any operations, even write operations such as creating or closing GitHub issues or moving them between ZenHub pipelines. This can be helpful during development to verify query design and during testing to verify implementation.
+
 ## API Research
 
 Research has been undertaken to understand how each subcommand might be implemented in terms of ZenHub API calls that would need to be made. See the research/ directory.

@@ -350,4 +350,4 @@ The accounts, and everything in them, exist only for the purpose of building the
 
 ## API Research
 
-Research has been undertaken to understand how each subcommand might be implemented in terms of ZenHub API calls that would need to be made. See the research/ directory.
+Research has been undertaken to understand how each subcommand might be implemented in terms of ZenHub API calls that would need to be made. See the research/ directory, which follows the naming convention `research/<topic>/<command>.md`, e.g. research/issue/list.md for `zh issue list`.

@@ -163,7 +163,6 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [ ] Tests: alias creation, alias used in resolution
 
 ### `zh pipeline automations <name>`
-- [ ] Introspect API for automation query availability
 - [ ] Display configured automations for the pipeline
 - [ ] Tests: with and without automations
 
@@ -383,17 +382,15 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [ ] Tests: remove, issue not in sprint
 
 ### `zh sprint velocity`
-- [ ] Introspect API for velocity data
 - [ ] Show velocity trends for recent sprints (points completed per sprint)
 - [ ] Tests: with history, no sprints
 
 ### `zh sprint scope [sprint]`
-- [ ] Introspect API for scope change data
 - [ ] Show scope change history (issues added/removed during sprint)
 - [ ] Tests: with changes, no changes
 
 ### `zh sprint review [sprint]`
-- [ ] Introspect API for review/retrospective data
+- [ ] Show details of review associated with a sprint
 - [ ] Tests: with data, no data
 
 ## Phase 13: Utility commands

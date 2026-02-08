@@ -327,7 +327,7 @@ List commands transparently fetch all pages from the API by default. A `--limit=
 
 ### Testing
 
-Unit tests with mocked API responses. The ZenHub GraphQL API is available via MCP for schema introspection and read-only validation during development.
+Unit tests with mocked API responses. The ZenHub GraphQL API is available via MCP for schema introspection and read-only validation during development. As each new feature is developed it should be built and verified by running it manually against the available test accounts. Interactive-mode features are exempted from manual verification.
 
 #### Test accounts and resources
 
@@ -347,6 +347,14 @@ A dedicated GitHub account (`dlakehammond`) and ZenHub account are available for
 Both repos are connected to the Dev Test workspace. MCP servers for both ZenHub and GitHub GraphQL APIs are configured and authenticated. The repositories are each cloned locally in the repos/ directory.
 
 The accounts, and everything in them, exist only for the purpose of building the `zh` CLI tool. It is permitted to execute any operations, even write operations such as creating or closing GitHub issues or moving them between ZenHub pipelines. This can be helpful during development to verify query design and during testing to verify implementation.
+
+Access tokens are available in credentials.md. To test `gh` integration, use `gh auth switch -u dlakehammond` to switch to the test account, but please remember to run `gh auth switch -u dslh` when done.
+
+#### Development config and cache
+
+During development and manual testing, `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` should be set to project-local directories (e.g., `test/config/` and `test/cache/`) so that `zh` reads and writes config/cache under the project tree rather than the developer's real `~/.config` and `~/.cache`. A Makefile target or wrapper script should set these variables when running the binary. This keeps test state self-contained and makes it easy to test different configurations (e.g., `gh` CLI vs PAT GitHub integration) without affecting the host environment.
+
+Note: interactive Bubble Tea prompts (cold start wizard, `--interactive` mode) cannot be tested in non-TTY environments. These require manual smoke testing. Unit tests should cover the underlying model logic, and non-TTY fallback behavior should be verified in automated tests.
 
 ## API Research
 

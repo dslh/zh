@@ -1,0 +1,4 @@
+Would move 2 issues to "In Development":
+
+  mpt#2451 Lock browser version... (currently in "Backlog")
+  api#1662 Synchronize posting ids... (currently in "New Issues")

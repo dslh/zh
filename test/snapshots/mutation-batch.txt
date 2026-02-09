@@ -1,0 +1,5 @@
+Moved 3 issues to "In Development":
+
+  mpt#1234 Fix login button alignment
+  mpt#1235 Update error messages
+  api#567  Add rate limiting headers

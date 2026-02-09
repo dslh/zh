@@ -1,0 +1,15 @@
+ISSUE: Fix login button alignment
+════════════════════════════════════════════════════════════════════════════════
+
+    State:  open
+ Estimate:  5
+ Pipeline:  In Development
+Assignees:  alice, bob
+
+DESCRIPTION
+────────────────────────────────────────────────────────────────────────────────
+The login button is misaligned on mobile devices.
+
+CONNECTED PRS
+────────────────────────────────────────────────────────────────────────────────
+  mpt#5 Fix button CSS

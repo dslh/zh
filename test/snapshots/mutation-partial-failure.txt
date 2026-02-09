@@ -1,0 +1,8 @@
+Closed 2 of 3 issues:
+
+  mpt#1234 Fix login button alignment
+  mpt#1235 Update error messages
+
+Failed:
+
+  api#568  Permission denied

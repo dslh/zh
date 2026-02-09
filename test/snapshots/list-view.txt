@@ -1,0 +1,7 @@
+NAME         STATE     ISSUES
+────────────────────────────────────────────────────────────────────────────────
+Sprint 42    active    12
+Sprint 41    closed    8
+Sprint 40    closed    15
+
+Total: 3 sprints

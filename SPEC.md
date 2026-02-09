@@ -464,7 +464,9 @@ Consistent exit codes for scripting:
 
 ### Batch operations
 
-Commands that accept multiple items (e.g., `zh issue move <issue>...`, `zh issue close <issue>...`) stop on first error. This ensures predictable state after failure and avoids wasting API calls when the root cause is systemic (auth, permissions, network). Users can re-run the command with remaining items after fixing the issue.
+Commands that accept multiple items (e.g., `zh issue move <issue>...`, `zh issue close <issue>...`) stop on first error by default. This ensures predictable state after failure and avoids wasting API calls when the root cause is systemic (auth, permissions, network). Users can re-run the command with remaining items after fixing the issue.
+
+A `--continue-on-error` flag overrides this behavior, processing all items regardless of individual failures. The command reports successes and failures separately using the partial failure output format, and exits with code `1` if any item failed.
 
 ### Debug mode
 
@@ -480,7 +482,7 @@ goreleaser handles all of the above from a single configuration.
 
 ### Pagination
 
-List commands transparently fetch all pages from the API by default. A `--limit=<n>` flag is available to cap results when only a subset is needed.
+List commands return up to 100 results by default. A `--limit=<n>` flag adjusts this cap, and `--all` fetches every result across all pages. Pagination is handled transparently — the user never sees cursors or page tokens.
 
 ### Testing
 

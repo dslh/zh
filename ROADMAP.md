@@ -18,8 +18,11 @@
 - [ ] Root Cobra command with `--verbose`, `--output=json` global flags
 - [ ] `zh version` subcommand (hardcoded for now, wired to build vars later)
 - [ ] Makefile with `build`, `test`, `lint` targets
+- [ ] Makefile `run` target that sets `XDG_CONFIG_HOME=test/config` and `XDG_CACHE_HOME=test/cache` for development
+- [ ] Pre-populate `test/config/zh/config.yml` with test account credentials (from credentials.md) and Dev Test workspace
 - [ ] Install linter (golangci-lint config)
 - [ ] First passing test: root command prints help without error
+- [ ] Test infrastructure: mock HTTP server helpers, test fixtures directory, snapshot test utilities
 
 ## Phase 1: Configuration & API client
 
@@ -43,12 +46,6 @@
 - [ ] Wire error types to exit codes throughout Cobra's error handling
 - [ ] Tests: verify specific exit codes for auth failure, not found, usage error
 
-### Output framework
-- [ ] Markdown renderer using Glamour (detect terminal width, color support)
-- [ ] JSON output mode: structured output when `--output=json`
-- [ ] Common output interface that commands return, rendered by the framework
-- [ ] Tests: snapshot tests for markdown and JSON output
-
 ## Phase 2: Cache framework
 
 - [ ] XDG-compliant cache path resolution (`~/.cache/zh/`)
@@ -58,18 +55,20 @@
 - [ ] `zh cache clear` command, with `--workspace` flag
 - [ ] Tests: cache hit, cache miss triggers refresh, clear removes files
 
-## Phase 3: Cold start wizard
+## Phase 3: Output framework
 
-- [ ] Detect first run (no config file or missing API key)
-- [ ] Prompt for ZenHub API key (with Bubble Tea text input)
-- [ ] Validate API key by making a test API call
-- [ ] Fetch workspace list, present selection prompt
-- [ ] GitHub access selection: `gh` CLI / PAT / none
-  - If `gh`: verify `gh auth status` works
-  - If PAT: prompt for token, validate with a test call
-  - If none: display list of features that won't work
-- [ ] Write config file with selections
-- [ ] Tests: mock API responses, verify config file output
+- [ ] Detail view renderer: entity title, double-line separator, key-value metadata, section headers with single-line separators
+- [ ] List view renderer: column-aligned tabular output with ALL CAPS headers and separator
+- [ ] Mutation confirmation renderer: single-item, multi-item, partial failure, dry-run formats
+- [ ] Progress bar renderer: `fraction unit (percentage)  bar` format with fixed 20-char bar
+- [ ] Markdown renderer using Glamour for user-authored content (issue descriptions, epic bodies)
+- [ ] JSON output mode: structured output when `--output=json`
+- [ ] Color support: palette per spec, respect `NO_COLOR` and non-TTY detection
+- [ ] Date/time formatting: standalone dates, date ranges, ISO 8601 for JSON
+- [ ] Missing value rendering: `-` in tables, `None` in detail views
+- [ ] Issue reference formatting: short form `repo#number`, long form when repos share names
+- [ ] `--limit` and `--all` flag support for list commands (default 100)
+- [ ] Tests: snapshot tests for each output format, color vs no-color, JSON mode
 
 ## Phase 4: Workspace commands
 
@@ -99,6 +98,10 @@ These establish the foundation — workspace context is required for every other
 - [ ] Cache repo name → GitHub ID mappings (critical for issue resolution later)
 - [ ] With GitHub access: include description, language, stars
 - [ ] Tests: with and without GitHub access
+
+### `zh workspace stats`
+- [ ] Show workspace metrics (velocity, automations)
+- [ ] Tests: with data, empty workspace
 
 ## Phase 5: Identifier resolution
 
@@ -180,9 +183,9 @@ Build the resolution layer now — almost every subsequent command depends on it
 ### `zh issue list`
 - [ ] Query issues across all pipelines (parallel API calls)
 - [ ] Filters: `--pipeline`, `--sprint`, `--epic`, `--assignee`, `--label`, `--estimate`, `--no-estimate`
-- [ ] `--limit` flag
+- [ ] `--limit` and `--all` flags (default 100 results)
 - [ ] Client-side filtering where API doesn't support it
-- [ ] Tests: no filters, each filter individually, combined filters
+- [ ] Tests: no filters, each filter individually, combined filters, limit and all behavior
 
 ### `zh issue show <issue>`
 - [ ] Resolve issue identifier
@@ -195,8 +198,8 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [ ] Resolve issue(s) and target pipeline
 - [ ] `--position=<top|bottom|n>` flag
 - [ ] `--dry-run` support
-- [ ] Stop-on-first-error for multiple issues
-- [ ] Tests: single move, batch move, position flag, dry run, error on second issue
+- [ ] Stop-on-first-error by default, `--continue-on-error` to process all items
+- [ ] Tests: single move, batch move, position flag, dry run, stop-on-error, continue-on-error with partial failure
 
 ### `zh issue estimate <issue> <value>`
 - [ ] Resolve issue, set estimate (omit value to clear)
@@ -207,14 +210,15 @@ Build the resolution layer now — almost every subsequent command depends on it
 ### `zh issue close <issue>...`
 - [ ] Resolve issue(s), close via API
 - [ ] `--dry-run` support
-- [ ] Stop-on-first-error
-- [ ] Tests: single close, batch close, already closed
+- [ ] Stop-on-first-error by default, `--continue-on-error` to process all items
+- [ ] Tests: single close, batch close, already closed, continue-on-error with partial failure
 
 ### `zh issue reopen <issue>... --pipeline=<name>`
 - [ ] Resolve issue(s) and target pipeline
 - [ ] `--position=<top|bottom>`
 - [ ] `--dry-run` support
-- [ ] Tests: reopen into pipeline, missing pipeline error
+- [ ] `--continue-on-error` for batch operations
+- [ ] Tests: reopen into pipeline, missing pipeline error, continue-on-error with partial failure
 
 ## Phase 9: Issue commands (connections & dependencies)
 
@@ -248,17 +252,20 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [ ] Resolve issue(s) and priority name
 - [ ] Omit priority to clear
 - [ ] `--dry-run` support
-- [ ] Tests: set, clear, invalid priority
+- [ ] `--continue-on-error` for batch operations
+- [ ] Tests: set, clear, invalid priority, continue-on-error with partial failure
 
 ### `zh issue label add <issue>... <label>...`
 - [ ] Resolve issue(s) and label(s)
 - [ ] `--dry-run` support
-- [ ] Tests: add single label, multiple labels, label not found
+- [ ] `--continue-on-error` for batch operations
+- [ ] Tests: add single label, multiple labels, label not found, continue-on-error with partial failure
 
 ### `zh issue label remove <issue>... <label>...`
 - [ ] Resolve issue(s) and label(s)
 - [ ] `--dry-run` support
-- [ ] Tests: remove, label not on issue
+- [ ] `--continue-on-error` for batch operations
+- [ ] Tests: remove, label not on issue, continue-on-error with partial failure
 
 ### `zh issue activity <issue>`
 - [ ] Fetch ZenHub activity feed (pipeline moves, estimate changes, etc.)
@@ -269,6 +276,7 @@ Build the resolution layer now — almost every subsequent command depends on it
 
 ### `zh epic list`
 - [ ] List epics in workspace (ID, title, state, issue count)
+- [ ] `--limit` and `--all` flags (default 100 results)
 - [ ] Cache epic list
 - [ ] Tests: list output, empty workspace
 
@@ -307,12 +315,14 @@ Build the resolution layer now — almost every subsequent command depends on it
 ### `zh epic add <epic> <issue>...`
 - [ ] Resolve epic and issue(s)
 - [ ] `--dry-run` support
-- [ ] Tests: add single, add multiple, issue already in epic
+- [ ] `--continue-on-error` for batch operations
+- [ ] Tests: add single, add multiple, issue already in epic, continue-on-error with partial failure
 
 ### `zh epic remove <epic> <issue>...`
 - [ ] Resolve epic and issue(s)
 - [ ] `--dry-run` support
-- [ ] Tests: remove, issue not in epic
+- [ ] `--continue-on-error` for batch operations
+- [ ] Tests: remove, issue not in epic, continue-on-error with partial failure
 
 ### `zh epic alias <epic> <alias>`
 - [ ] Write alias to config
@@ -330,22 +340,26 @@ Build the resolution layer now — almost every subsequent command depends on it
 ### `zh epic assignee add <epic> <user>...`
 - [ ] Resolve user(s), add to epic
 - [ ] `--dry-run` support
-- [ ] Tests: add, user not found
+- [ ] `--continue-on-error` for batch operations
+- [ ] Tests: add, user not found, continue-on-error with partial failure
 
 ### `zh epic assignee remove <epic> <user>...`
 - [ ] Resolve user(s), remove from epic
 - [ ] `--dry-run` support
-- [ ] Tests: remove, user not assigned
+- [ ] `--continue-on-error` for batch operations
+- [ ] Tests: remove, user not assigned, continue-on-error with partial failure
 
 ### `zh epic label add <epic> <label>...`
 - [ ] Resolve label(s), add to epic
 - [ ] `--dry-run` support
-- [ ] Tests: add, label not found
+- [ ] `--continue-on-error` for batch operations
+- [ ] Tests: add, label not found, continue-on-error with partial failure
 
 ### `zh epic label remove <epic> <label>...`
 - [ ] Resolve label(s), remove from epic
 - [ ] `--dry-run` support
-- [ ] Tests: remove, label not on epic
+- [ ] `--continue-on-error` for batch operations
+- [ ] Tests: remove, label not on epic, continue-on-error with partial failure
 
 ### `zh epic key-date list <epic>`
 - [ ] List key dates (milestones) within an epic
@@ -375,11 +389,13 @@ Build the resolution layer now — almost every subsequent command depends on it
 ### `zh sprint add <issue>...`
 - [ ] Default to active sprint, `--sprint=<id>` to target specific
 - [ ] `--dry-run` support
-- [ ] Tests: add to active, add to specific, no active sprint
+- [ ] `--continue-on-error` for batch operations
+- [ ] Tests: add to active, add to specific, no active sprint, continue-on-error with partial failure
 
 ### `zh sprint remove <issue>...`
 - [ ] `--dry-run` support
-- [ ] Tests: remove, issue not in sprint
+- [ ] `--continue-on-error` for batch operations
+- [ ] Tests: remove, issue not in sprint, continue-on-error with partial failure
 
 ### `zh sprint velocity`
 - [ ] Show velocity trends for recent sprints (points completed per sprint)
@@ -411,8 +427,21 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [ ] Consistent dry-run output format across all commands
 - [ ] Tests: help text doesn't error, dry-run on every applicable command
 
-## Phase 15: Interactive mode
+## Phase 15: Interactive mode & cold start wizard
 
+### Cold start wizard
+- [ ] Detect first run (no config file or missing API key)
+- [ ] Prompt for ZenHub API key (with Bubble Tea text input)
+- [ ] Validate API key by making a test API call
+- [ ] Fetch workspace list, present selection prompt
+- [ ] GitHub access selection: `gh` CLI / PAT / none
+  - If `gh`: verify `gh auth status` works
+  - If PAT: prompt for token, validate with a test call
+  - If none: display list of features that won't work
+- [ ] Write config file with selections
+- [ ] Tests: mock API responses, verify config file output
+
+### Interactive selection
 - [ ] Bubble Tea list component for entity selection
 - [ ] Wire `--interactive` to `pipeline show`, `issue show`, `epic show`, `sprint show`, `workspace show`
 - [ ] Handle terminal detection (disable interactive in non-TTY)

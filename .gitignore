@@ -1,3 +1,10 @@
 prompts/
 repos/
 credentials.md
+
+# Build output
+zh
+
+# Test state
+test/config/
+test/cache/

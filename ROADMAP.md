@@ -2,8 +2,8 @@
 
 ## Phase 0: Project scaffolding
 
-- [ ] `go mod init github.com/dslh/zh`
-- [ ] Set up directory structure:
+- [x] `go mod init github.com/dslh/zh`
+- [x] Set up directory structure:
   ```
   cmd/         # Cobra command definitions, one file per command group
   internal/
@@ -15,14 +15,14 @@
     gh/        # GitHub API integration (gh CLI / PAT)
   main.go
   ```
-- [ ] Root Cobra command with `--verbose`, `--output=json` global flags
-- [ ] `zh version` subcommand (hardcoded for now, wired to build vars later)
-- [ ] Makefile with `build`, `test`, `lint` targets
-- [ ] Makefile `run` target that sets `XDG_CONFIG_HOME=test/config` and `XDG_CACHE_HOME=test/cache` for development
-- [ ] Pre-populate `test/config/zh/config.yml` with test account credentials (from credentials.md) and Dev Test workspace
-- [ ] Install linter (golangci-lint config)
-- [ ] First passing test: root command prints help without error
-- [ ] Test infrastructure: mock HTTP server helpers, test fixtures directory, snapshot test utilities
+- [x] Root Cobra command with `--verbose`, `--output=json` global flags
+- [x] `zh version` subcommand (hardcoded for now, wired to build vars later)
+- [x] Makefile with `build`, `test`, `lint` targets
+- [x] Makefile `run` target that sets `XDG_CONFIG_HOME=test/config` and `XDG_CACHE_HOME=test/cache` for development
+- [x] Pre-populate `test/config/zh/config.yml` with test account credentials (from credentials.md) and Dev Test workspace
+- [x] Install linter (golangci-lint config)
+- [x] First passing test: root command prints help without error
+- [x] Test infrastructure: mock HTTP server helpers, test fixtures directory, snapshot test utilities
 
 ## Phase 1: Configuration & API client
 

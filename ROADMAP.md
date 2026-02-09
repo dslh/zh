@@ -108,11 +108,11 @@ These establish the foundation — workspace context is required for every other
 Build the resolution layer now — almost every subsequent command depends on it.
 
 ### Pipeline resolution
-- [ ] Resolve by: ZenHub ID, exact name, unique substring, alias
-- [ ] Ambiguous substring → error with list of candidates
-- [ ] Cache pipeline list, invalidate-on-miss
-- [ ] Alias lookup from config
-- [ ] Tests: each resolution method, ambiguous match error
+- [x] Resolve by: ZenHub ID, exact name, unique substring, alias
+- [x] Ambiguous substring → error with list of candidates
+- [x] Cache pipeline list, invalidate-on-miss
+- [x] Alias lookup from config
+- [x] Tests: each resolution method, ambiguous match error
 
 ### Issue/PR resolution
 - [ ] Parse identifiers: ZenHub ID, `owner/repo#number`, `repo#number`
@@ -135,13 +135,13 @@ Build the resolution layer now — almost every subsequent command depends on it
 ## Phase 6: Pipeline commands
 
 ### `zh pipeline list`
-- [ ] List all pipelines in workspace with position order
-- [ ] Tests: ordering, empty workspace
+- [x] List all pipelines in workspace with position order
+- [x] Tests: ordering, empty workspace
 
 ### `zh pipeline show <name>`
-- [ ] Resolve pipeline by name/substring/alias
-- [ ] Display pipeline details and issues within it
-- [ ] Tests: resolution, output format
+- [x] Resolve pipeline by name/substring/alias
+- [x] Display pipeline details and issues within it
+- [x] Tests: resolution, output format
 
 ### `zh pipeline create <name>`
 - [ ] `--position`, `--description` flags

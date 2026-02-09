@@ -27,24 +27,24 @@
 ## Phase 1: Configuration & API client
 
 ### Config management
-- [ ] XDG-compliant config path resolution (`~/.config/zh/config.yml`)
-- [ ] Viper setup: read config file, bind environment variables (`ZH_API_KEY`, `ZH_WORKSPACE`, `ZH_GITHUB_TOKEN`)
-- [ ] Config struct with typed access (api key, workspace ID, GitHub method/token, aliases)
-- [ ] Config write-back for cold start and `workspace switch`
-- [ ] Tests: env vars override config file, missing config returns zero values
+- [x] XDG-compliant config path resolution (`~/.config/zh/config.yml`)
+- [x] Viper setup: read config file, bind environment variables (`ZH_API_KEY`, `ZH_WORKSPACE`, `ZH_GITHUB_TOKEN`)
+- [x] Config struct with typed access (api key, workspace ID, GitHub method/token, aliases)
+- [x] Config write-back for cold start and `workspace switch`
+- [x] Tests: env vars override config file, missing config returns zero values
 
 ### GraphQL API client
-- [ ] HTTP client with auth header, user-agent, configurable base URL
-- [ ] Generic `Execute(query, variables) -> json.RawMessage` method
-- [ ] Error response parsing: surface ZenHub error messages cleanly
-- [ ] `--verbose` logging: dump request/response to stderr
-- [ ] Rate limit awareness (respect retry-after if present)
-- [ ] Tests: mock HTTP server, verify auth header, test error parsing
+- [x] HTTP client with auth header, user-agent, configurable base URL
+- [x] Generic `Execute(query, variables) -> json.RawMessage` method
+- [x] Error response parsing: surface ZenHub error messages cleanly
+- [x] `--verbose` logging: dump request/response to stderr
+- [x] Rate limit awareness (respect retry-after if present)
+- [x] Tests: mock HTTP server, verify auth header, test error parsing
 
 ### Exit codes
-- [ ] Define exit code constants (0–4 per spec)
-- [ ] Wire error types to exit codes throughout Cobra's error handling
-- [ ] Tests: verify specific exit codes for auth failure, not found, usage error
+- [x] Define exit code constants (0–4 per spec)
+- [x] Wire error types to exit codes throughout Cobra's error handling
+- [x] Tests: verify specific exit codes for auth failure, not found, usage error
 
 ## Phase 2: Cache framework
 

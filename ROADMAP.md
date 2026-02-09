@@ -48,12 +48,12 @@
 
 ## Phase 2: Cache framework
 
-- [ ] XDG-compliant cache path resolution (`~/.cache/zh/`)
-- [ ] Generic cache: `Get[T](key) -> (T, bool)`, `Set[T](key, T)`, `Clear(key)`
-- [ ] Cache file naming per spec (e.g. `pipelines-{workspace_id}.json`)
-- [ ] Invalidate-on-miss pattern: when a lookup fails, refresh that resource type from API, then retry
-- [ ] `zh cache clear` command, with `--workspace` flag
-- [ ] Tests: cache hit, cache miss triggers refresh, clear removes files
+- [x] XDG-compliant cache path resolution (`~/.cache/zh/`)
+- [x] Generic cache: `Get[T](key) -> (T, bool)`, `Set[T](key, T)`, `Clear(key)`
+- [x] Cache file naming per spec (e.g. `pipelines-{workspace_id}.json`)
+- [x] Invalidate-on-miss pattern: when a lookup fails, refresh that resource type from API, then retry
+- [x] `zh cache clear` command, with `--workspace` flag
+- [x] Tests: cache hit, cache miss triggers refresh, clear removes files
 
 ## Phase 3: Output framework
 

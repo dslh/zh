@@ -115,11 +115,11 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] Tests: each resolution method, ambiguous match error
 
 ### Issue/PR resolution
-- [ ] Parse identifiers: ZenHub ID, `owner/repo#number`, `repo#number`
-- [ ] `repo#number` → look up repo in cache, resolve `repositoryGhId`, query `issueByInfo`
-- [ ] `--repo` flag: allow bare issue numbers, resolve repo once
-- [ ] Branch name resolution when `--repo` is used (requires GitHub access)
-- [ ] Tests: each identifier format, repo not found, ambiguous repo name
+- [x] Parse identifiers: ZenHub ID, `owner/repo#number`, `repo#number`
+- [x] `repo#number` → look up repo in cache, resolve `repositoryGhId`, query `issueByInfo`
+- [x] `--repo` flag: allow bare issue numbers, resolve repo once
+- [x] Branch name resolution when `--repo` is used (requires GitHub access)
+- [x] Tests: each identifier format, repo not found, ambiguous repo name
 
 ### Epic resolution
 - [ ] Resolve by: ZenHub ID, exact title, unique substring, alias, `owner/repo#number` (legacy)

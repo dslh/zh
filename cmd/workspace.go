@@ -12,6 +12,7 @@ import (
 	"github.com/dslh/zh/internal/exitcode"
 	"github.com/dslh/zh/internal/gh"
 	"github.com/dslh/zh/internal/output"
+	"github.com/dslh/zh/internal/resolve"
 	"github.com/spf13/cobra"
 )
 
@@ -138,13 +139,8 @@ type priorityNode struct {
 	Color string `json:"color"`
 }
 
-// Cached repo entry for repo name → GitHub ID resolution.
-type cachedRepo struct {
-	ID        string `json:"id"`
-	GhID      int    `json:"ghId"`
-	Name      string `json:"name"`
-	OwnerName string `json:"ownerName"`
-}
+// cachedRepo is an alias for resolve.CachedRepo for convenience within this file.
+type cachedRepo = resolve.CachedRepo
 
 // GraphQL queries
 
@@ -959,7 +955,7 @@ func cacheReposFromDetail(ws *workspaceDetail) {
 		})
 	}
 	if len(repos) > 0 {
-		_ = cache.Set(cache.NewScopedKey("repos", ws.ID), repos)
+		_ = resolve.FetchReposIntoCache(repos, ws.ID)
 	}
 }
 
@@ -1032,7 +1028,7 @@ func runWorkspaceRepos(cmd *cobra.Command, args []string) error {
 			OwnerName: r.OwnerName,
 		})
 	}
-	_ = cache.Set(cache.NewScopedKey("repos", cfg.Workspace), cached)
+	_ = resolve.FetchReposIntoCache(cached, cfg.Workspace)
 
 	// GitHub enrichment
 	var ghInfo map[string]githubRepoInfo

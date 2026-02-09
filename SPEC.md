@@ -141,7 +141,162 @@ View priorities configured for the workspace.
 
 ### Output format
 
-All commands output in markdown format. All commands support `--output=json`, which does what you would expect.
+All commands support `--output=json`, which outputs structured JSON for scripting and machine consumption. The default human-readable output follows the conventions below.
+
+#### Rendering user-authored content
+
+User-authored markdown content (issue descriptions, epic bodies, sprint review text) is rendered for the terminal using Glamour. All other CLI-generated output (headers, metadata, tables, summaries) uses the structured formatting described in this section. This matches how `gh` uses Glamour — for rendering content, not for generating chrome.
+
+#### Detail views
+
+Commands that display a single entity (`show`, `progress`, `review`) use the following structure:
+
+```
+ENTITY TYPE: Title or Name
+══════════════════════════════════════════════════════════════════════════════
+
+Key:         Value
+Another:     Value
+State:       value
+
+SECTION NAME
+────────────────────────────────────────────────────────────────────────────────
+Section content — tables, lists, rendered markdown, etc.
+
+ANOTHER SECTION
+────────────────────────────────────────────────────────────────────────────────
+More content...
+```
+
+Rules:
+- Entity title line in `ALL CAPS: Title`, followed by a `══` double-line separator
+- Metadata as `Key: Value` pairs with right-aligned keys for visual alignment
+- Section headers in ALL CAPS, preceded by a blank line, followed by a `──` single-line separator
+- Separators span 80 characters
+
+#### List views
+
+Commands that display multiple entities (`list`, `board`) use column-aligned tabular output:
+
+```
+COLUMN_A    COLUMN_B    COLUMN_C
+────────────────────────────────────────────────────────────────────────────────
+value       value       value
+value       value       value
+
+Total: N items (optional summary)
+```
+
+Rules:
+- Column headers in ALL CAPS
+- `──` separator under headers
+- Columns aligned with consistent spacing
+- Optional summary footer with counts
+- Long text truncated with `...` to fit terminal width
+
+#### Mutation confirmations
+
+Commands that modify state follow a consistent pattern based on the operation:
+
+| Scenario | Format |
+|----------|--------|
+| Single item | One line: `Set estimate on mpt#1234 to 5` |
+| Multiple items | Header + indented list: `Moved 3 issues to "In Dev":` |
+| Partial failure | Success block, then `Failed:` block with reasons |
+| Dry-run | `Would` prefix: `Would move 2 issues to "In Dev":` |
+
+Multi-item output lists each affected item on its own indented line:
+
+```
+Moved 3 issues to "In Development":
+
+  mpt#1234 Fix login button alignment
+  mpt#1235 Update error messages
+  api#567  Add rate limiting headers
+```
+
+Partial failures separate successes from failures:
+
+```
+Closed 2 of 3 issues:
+
+  mpt#1234 Fix login button alignment
+  mpt#1235 Update error messages
+
+Failed:
+
+  api#568  Permission denied
+```
+
+Dry-run output mirrors the real output but uses `Would` and present tense, and shows before/after state where relevant:
+
+```
+Would move 2 issues to "In Development":
+
+  mpt#2451 Lock browser version... (currently in "Backlog")
+  api#1662 Synchronize posting ids... (currently in "New Issues")
+```
+
+#### Dates and times
+
+- Standalone dates: `Jan 20, 2025`
+- Date ranges: `Jan 20 → Feb 2, 2025` (arrow separator, year on the end date only; the arrow distinguishes ranges from hyphenated names)
+- Same-month ranges may abbreviate: `Jan 20 → 31, 2025`
+- JSON output uses ISO 8601: `2025-01-20`
+
+#### Missing and empty values
+
+- In tables: `-` (compact, scannable)
+- In detail view metadata: `None` (reads naturally, e.g. `Assignees: None`)
+- Never leave table cells blank — always use `-` so it's clear the data is absent rather than inapplicable
+
+#### Issue references
+
+Default to the short form `repo#number` (e.g. `mpt#1234`). Use the long form `owner/repo#number` only when the workspace contains repos with the same name under different owners. This should be handled by a shared formatting function that checks the workspace context, not decided per-command.
+
+#### Indicators
+
+- `▶` marks an actively running item (e.g. current sprint)
+- `*` marks the user's configured default (e.g. default workspace, default repo)
+
+These mean different things: `▶` is temporal state, `*` is user configuration.
+
+#### Progress bars
+
+Anywhere completion is displayed, use a consistent format:
+
+```
+Points:   34/52 completed (65%)  █████████████░░░░░░░
+```
+
+Structure: `fraction unit (percentage)  bar`. Bar width is fixed at 20 characters using `█` for filled and `░` for remaining.
+
+#### Errors
+
+Errors are written to stderr with an `Error:` prefix, followed by an explanation and actionable remediation:
+
+```
+Error: Pipeline "dev" is ambiguous — matches 2 pipelines:
+  - In Development [Z2lkOi8v...]
+  - DevOps [Z2lkOi8v...]
+
+Use a more specific name or the pipeline ID.
+```
+
+When a substring identifier matches multiple entities, always list the candidates so the user can refine their query.
+
+#### Color
+
+Color reinforces meaning — it does not decorate. The palette:
+
+- **Green:** success confirmations, completed/closed states
+- **Red:** errors, failed items in partial-success output
+- **Yellow:** warnings, dry-run output
+- **Cyan:** entity IDs, links
+- **Dim/gray:** secondary information (IDs in parentheses, timestamps)
+- **Bold:** entity titles, section headers
+
+All output must be legible without color. Respect the `NO_COLOR` environment variable and suppress color when stdout is not a TTY (i.e. when piped or redirected).
 
 ### Issue identifiers
 
@@ -253,6 +408,8 @@ ZenHub uses a GraphQL API:
 | Interactive selection | Bubble Tea + Lip Gloss | For `--interactive` prompts and the cold start wizard |
 | GitHub API | go-github | For direct GitHub access beyond what `gh` provides |
 | HTTP client | Standard library | `net/http` is sufficient for ZenHub's GraphQL API |
+
+This list is not exhaustive. Other libraries are permitted if they will ease or simplify implementation.
 
 ### Configuration
 

@@ -75,29 +75,29 @@
 These establish the foundation — workspace context is required for every other command.
 
 ### `zh workspace list`
-- [ ] Query `viewer.zenhubOrganizations` for all workspaces
-- [ ] `--favorites` and `--recent` filters
-- [ ] Highlight current workspace in output
-- [ ] Cache workspace list
-- [ ] Tests: list formatting, filter behavior
+- [x] Query `viewer.zenhubOrganizations` for all workspaces
+- [x] `--favorites` and `--recent` filters
+- [x] Highlight current workspace in output
+- [x] Cache workspace list
+- [x] Tests: list formatting, filter behavior
 
 ### `zh workspace show [name]`
-- [ ] Default to current workspace if no name given
-- [ ] Display: name, ID, connected repos, pipelines, sprint config
-- [ ] Resolve workspace by name or substring if argument given
-- [ ] Tests: default workspace, named workspace, not found
+- [x] Default to current workspace if no name given
+- [x] Display: name, ID, connected repos, pipelines, sprint config
+- [x] Resolve workspace by name or substring if argument given
+- [x] Tests: default workspace, named workspace, not found
 
 ### `zh workspace switch <name>`
-- [ ] Resolve workspace by name/substring from cached list
-- [ ] Update config file with new workspace ID
-- [ ] Clear workspace-scoped caches on switch
-- [ ] Tests: switch updates config, clears caches
+- [x] Resolve workspace by name/substring from cached list
+- [x] Update config file with new workspace ID
+- [x] Clear workspace-scoped caches on switch
+- [x] Tests: switch updates config, clears caches
 
 ### `zh workspace repos`
-- [ ] List repos connected to current workspace
-- [ ] Cache repo name → GitHub ID mappings (critical for issue resolution later)
+- [x] List repos connected to current workspace
+- [x] Cache repo name → GitHub ID mappings (critical for issue resolution later)
 - [ ] With GitHub access: include description, language, stars
-- [ ] Tests: with and without GitHub access
+- [x] Tests: with and without GitHub access
 
 ### `zh workspace stats`
 - [ ] Show workspace metrics (velocity, automations)

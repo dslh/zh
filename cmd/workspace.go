@@ -10,6 +10,7 @@ import (
 	"github.com/dslh/zh/internal/cache"
 	"github.com/dslh/zh/internal/config"
 	"github.com/dslh/zh/internal/exitcode"
+	"github.com/dslh/zh/internal/gh"
 	"github.com/dslh/zh/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -315,6 +316,22 @@ const workspaceReposQuery = `query WorkspaceRepos($workspaceId: ID!, $first: Int
   }
 }`
 
+// GitHub enrichment query for repos
+const githubRepoQuery = `query RepoDetails($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    description
+    primaryLanguage { name }
+    stargazerCount
+  }
+}`
+
+// githubRepoInfo holds GitHub-enriched repo data.
+type githubRepoInfo struct {
+	Description string `json:"description"`
+	Language    string `json:"language"`
+	Stars       int    `json:"stars"`
+}
+
 // Commands
 
 var workspaceCmd = &cobra.Command{
@@ -326,6 +343,9 @@ var workspaceCmd = &cobra.Command{
 var (
 	workspaceListFavorites bool
 	workspaceListRecent    bool
+	workspaceReposGitHub   bool
+	workspaceStatsSprints  int
+	workspaceStatsDays     int
 )
 
 var workspaceListCmd = &cobra.Command{
@@ -354,8 +374,15 @@ var workspaceSwitchCmd = &cobra.Command{
 var workspaceReposCmd = &cobra.Command{
 	Use:   "repos",
 	Short: "List repos connected to the workspace",
-	Long:  `List all GitHub repositories connected to the current workspace.`,
+	Long:  `List all GitHub repositories connected to the current workspace. Use --github to include description, language, and stars from GitHub.`,
 	RunE:  runWorkspaceRepos,
+}
+
+var workspaceStatsCmd = &cobra.Command{
+	Use:   "stats",
+	Short: "Show workspace metrics",
+	Long:  `Show workspace metrics including velocity trends, cycle time, and pipeline distribution.`,
+	RunE:  runWorkspaceStats,
 }
 
 func init() {
@@ -363,16 +390,26 @@ func init() {
 	workspaceListCmd.Flags().BoolVar(&workspaceListRecent, "recent", false, "Show recently viewed workspaces")
 	workspaceListCmd.MarkFlagsMutuallyExclusive("favorites", "recent")
 
+	workspaceReposCmd.Flags().BoolVar(&workspaceReposGitHub, "github", false, "Include description, language, and stars from GitHub")
+
+	workspaceStatsCmd.Flags().IntVar(&workspaceStatsSprints, "sprints", 6, "Number of recent closed sprints for velocity trend")
+	workspaceStatsCmd.Flags().IntVar(&workspaceStatsDays, "days", 30, "Cycle time window in days")
+
 	workspaceCmd.AddCommand(workspaceListCmd)
 	workspaceCmd.AddCommand(workspaceShowCmd)
 	workspaceCmd.AddCommand(workspaceSwitchCmd)
 	workspaceCmd.AddCommand(workspaceReposCmd)
+	workspaceCmd.AddCommand(workspaceStatsCmd)
 	rootCmd.AddCommand(workspaceCmd)
 }
 
 // apiNewFunc is the function used to create API clients. It can be replaced
 // in tests to inject a mock server endpoint.
 var apiNewFunc = api.New
+
+// ghNewFunc is the function used to create GitHub clients. It can be replaced
+// in tests to inject a mock GitHub endpoint.
+var ghNewFunc = gh.New
 
 // newClient creates an API client from config, wiring up verbose logging.
 func newClient(cfg *config.Config, cmd *cobra.Command) *api.Client {
@@ -383,6 +420,18 @@ func newClient(cfg *config.Config, cmd *cobra.Command) *api.Client {
 		}))
 	}
 	return apiNewFunc(cfg.APIKey, opts...)
+}
+
+// newGitHubClient creates a GitHub API client from config. Returns nil if
+// GitHub access is not configured.
+func newGitHubClient(cfg *config.Config, cmd *cobra.Command) *gh.Client {
+	var opts []gh.Option
+	if verbose {
+		opts = append(opts, gh.WithVerbose(func(format string, args ...any) {
+			fmt.Fprintf(cmd.ErrOrStderr(), format, args...)
+		}))
+	}
+	return ghNewFunc(cfg.GitHub.Method, cfg.GitHub.Token, opts...)
 }
 
 // requireConfig loads config and validates that an API key is present.
@@ -985,7 +1034,33 @@ func runWorkspaceRepos(cmd *cobra.Command, args []string) error {
 	}
 	_ = cache.Set(cache.NewScopedKey("repos", cfg.Workspace), cached)
 
+	// GitHub enrichment
+	var ghInfo map[string]githubRepoInfo
+	if workspaceReposGitHub {
+		ghClient := newGitHubClient(cfg, cmd)
+		if ghClient == nil {
+			fmt.Fprintln(cmd.ErrOrStderr(), "Warning: GitHub access not configured — ignoring --github flag")
+		} else {
+			ghInfo = fetchGitHubRepoInfo(ghClient, repos)
+		}
+	}
+
 	if output.IsJSON(outputFormat) {
+		if ghInfo != nil {
+			type enrichedRepo struct {
+				repoNode
+				GitHub *githubRepoInfo `json:"github,omitempty"`
+			}
+			enriched := make([]enrichedRepo, len(repos))
+			for i, r := range repos {
+				enriched[i] = enrichedRepo{repoNode: r}
+				key := r.OwnerName + "/" + r.Name
+				if info, ok := ghInfo[key]; ok {
+					enriched[i].GitHub = &info
+				}
+			}
+			return output.JSON(w, enriched)
+		}
 		return output.JSON(w, repos)
 	}
 
@@ -994,21 +1069,85 @@ func runWorkspaceRepos(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	lw := output.NewListWriter(w, "REPO", "GITHUB ID", "PRIVATE", "ARCHIVED")
-	for _, r := range repos {
-		name := r.OwnerName + "/" + r.Name
-		private := "no"
-		if r.IsPrivate {
-			private = "yes"
+	if ghInfo != nil {
+		lw := output.NewListWriter(w, "REPO", "DESCRIPTION", "LANGUAGE", "STARS", "PRIVATE")
+		for _, r := range repos {
+			name := r.OwnerName + "/" + r.Name
+			private := "no"
+			if r.IsPrivate {
+				private = "yes"
+			}
+			info := ghInfo[name]
+			desc := output.TableMissing
+			if info.Description != "" {
+				desc = info.Description
+				if len(desc) > 40 {
+					desc = desc[:37] + "..."
+				}
+			}
+			lang := output.TableMissing
+			if info.Language != "" {
+				lang = info.Language
+			}
+			lw.Row(name, desc, lang, fmt.Sprintf("%d", info.Stars), private)
 		}
-		archived := "no"
-		if r.IsArchived {
-			archived = "yes"
+		lw.FlushWithFooter(fmt.Sprintf("Total: %d repo(s)", len(repos)))
+	} else {
+		lw := output.NewListWriter(w, "REPO", "GITHUB ID", "PRIVATE", "ARCHIVED")
+		for _, r := range repos {
+			name := r.OwnerName + "/" + r.Name
+			private := "no"
+			if r.IsPrivate {
+				private = "yes"
+			}
+			archived := "no"
+			if r.IsArchived {
+				archived = "yes"
+			}
+			lw.Row(name, fmt.Sprintf("%d", r.GhID), private, archived)
 		}
-		lw.Row(name, fmt.Sprintf("%d", r.GhID), private, archived)
+		lw.FlushWithFooter(fmt.Sprintf("Total: %d repo(s)", len(repos)))
 	}
-	lw.FlushWithFooter(fmt.Sprintf("Total: %d repo(s)", len(repos)))
 	return nil
+}
+
+// fetchGitHubRepoInfo fetches enriched repo info from GitHub for each repo.
+func fetchGitHubRepoInfo(client *gh.Client, repos []repoNode) map[string]githubRepoInfo {
+	info := make(map[string]githubRepoInfo)
+	for _, r := range repos {
+		data, err := client.Execute(githubRepoQuery, map[string]any{
+			"owner": r.OwnerName,
+			"name":  r.Name,
+		})
+		if err != nil {
+			continue
+		}
+
+		var resp struct {
+			Repository struct {
+				Description     *string `json:"description"`
+				PrimaryLanguage *struct {
+					Name string `json:"name"`
+				} `json:"primaryLanguage"`
+				StargazerCount int `json:"stargazerCount"`
+			} `json:"repository"`
+		}
+		if err := json.Unmarshal(data, &resp); err != nil {
+			continue
+		}
+
+		ri := githubRepoInfo{
+			Stars: resp.Repository.StargazerCount,
+		}
+		if resp.Repository.Description != nil {
+			ri.Description = *resp.Repository.Description
+		}
+		if resp.Repository.PrimaryLanguage != nil {
+			ri.Language = resp.Repository.PrimaryLanguage.Name
+		}
+		info[r.OwnerName+"/"+r.Name] = ri
+	}
+	return info
 }
 
 // fetchWorkspaceRepos fetches all repos for a workspace, handling pagination.
@@ -1063,4 +1202,392 @@ func formatDay(day string) string {
 		return day
 	}
 	return strings.ToUpper(day[:1]) + strings.ToLower(day[1:])
+}
+
+// --- Workspace stats ---
+
+const workspaceStatsQuery = `query WorkspaceStats($workspaceId: ID!, $sprintCount: Int!, $daysInCycle: Int!) {
+  workspace(id: $workspaceId) {
+    displayName
+
+    averageSprintVelocity
+    averageSprintVelocityWithDiff(skipDiff: false) {
+      velocity
+      difference
+      sprintsCount
+    }
+
+    assumeEstimates
+    assumedEstimateValue
+    hasEstimatedIssues
+
+    issueFlowStats(daysInCycle: $daysInCycle) {
+      avgCycleDays
+      inDevelopmentDays
+      inReviewDays
+    }
+
+    pipelinesConnection(first: 50) {
+      totalCount
+      nodes {
+        name
+        stage
+        issues(first: 0) {
+          totalCount
+          pipelineCounts {
+            issuesCount
+            pullRequestsCount
+            sumEstimates
+          }
+        }
+      }
+    }
+
+    closedPipeline {
+      issues(first: 0) {
+        totalCount
+        pipelineCounts {
+          issuesCount
+          pullRequestsCount
+          sumEstimates
+        }
+      }
+    }
+
+    issues(first: 0) {
+      totalCount
+      pipelineCounts {
+        issuesCount
+        pullRequestsCount
+        sumEstimates
+      }
+    }
+
+    activeSprint {
+      name
+      generatedName
+      state
+      startAt
+      endAt
+      totalPoints
+      completedPoints
+      closedIssuesCount
+      sprintIssues(first: 0) {
+        totalCount
+      }
+    }
+
+    sprints(
+      first: $sprintCount
+      filters: { state: { eq: CLOSED } }
+      orderBy: { field: END_AT, direction: DESC }
+    ) {
+      totalCount
+      nodes {
+        name
+        generatedName
+        startAt
+        endAt
+        totalPoints
+        completedPoints
+        closedIssuesCount
+        sprintIssues(first: 0) {
+          totalCount
+        }
+      }
+    }
+
+    sprintConfig {
+      kind
+      period
+    }
+
+    repositoriesConnection(first: 0) { totalCount }
+    zenhubEpics(first: 0) { totalCount }
+    prioritiesConnection(first: 0) { totalCount }
+    issueDependencies(first: 0) { totalCount }
+    pipelineToPipelineAutomations(first: 0) { totalCount }
+  }
+}`
+
+// Stats response types
+
+type statsResponse struct {
+	DisplayName string `json:"displayName"`
+
+	AvgVelocity      *float64 `json:"averageSprintVelocity"`
+	VelocityWithDiff *struct {
+		Velocity     float64  `json:"velocity"`
+		Difference   *float64 `json:"difference"`
+		SprintsCount int      `json:"sprintsCount"`
+	} `json:"averageSprintVelocityWithDiff"`
+
+	AssumeEstimates      bool    `json:"assumeEstimates"`
+	AssumedEstimateValue float64 `json:"assumedEstimateValue"`
+	HasEstimatedIssues   bool    `json:"hasEstimatedIssues"`
+
+	IssueFlowStats *struct {
+		AvgCycleDays      *int `json:"avgCycleDays"`
+		InDevelopmentDays *int `json:"inDevelopmentDays"`
+		InReviewDays      *int `json:"inReviewDays"`
+	} `json:"issueFlowStats"`
+
+	PipelinesConn struct {
+		TotalCount int             `json:"totalCount"`
+		Nodes      []statsPipeline `json:"nodes"`
+	} `json:"pipelinesConnection"`
+
+	ClosedPipeline *struct {
+		Issues pipelineIssues `json:"issues"`
+	} `json:"closedPipeline"`
+
+	Issues pipelineIssues `json:"issues"`
+
+	ActiveSprint *statsSprint `json:"activeSprint"`
+
+	Sprints struct {
+		TotalCount int           `json:"totalCount"`
+		Nodes      []statsSprint `json:"nodes"`
+	} `json:"sprints"`
+
+	SprintConfig *struct {
+		Kind   string `json:"kind"`
+		Period int    `json:"period"`
+	} `json:"sprintConfig"`
+
+	ReposConn       totalCountConn `json:"repositoriesConnection"`
+	EpicsConn       totalCountConn `json:"zenhubEpics"`
+	PrioritiesConn  totalCountConn `json:"prioritiesConnection"`
+	DepsConn        totalCountConn `json:"issueDependencies"`
+	AutomationsConn totalCountConn `json:"pipelineToPipelineAutomations"`
+}
+
+type totalCountConn struct {
+	TotalCount int `json:"totalCount"`
+}
+
+type statsPipeline struct {
+	Name   string         `json:"name"`
+	Stage  *string        `json:"stage"`
+	Issues pipelineIssues `json:"issues"`
+}
+
+type pipelineIssues struct {
+	TotalCount     int `json:"totalCount"`
+	PipelineCounts *struct {
+		IssuesCount       int     `json:"issuesCount"`
+		PullRequestsCount int     `json:"pullRequestsCount"`
+		SumEstimates      float64 `json:"sumEstimates"`
+	} `json:"pipelineCounts"`
+}
+
+type statsSprint struct {
+	Name              string  `json:"name"`
+	GeneratedName     string  `json:"generatedName"`
+	State             string  `json:"state"`
+	StartAt           string  `json:"startAt"`
+	EndAt             string  `json:"endAt"`
+	TotalPoints       float64 `json:"totalPoints"`
+	CompletedPoints   float64 `json:"completedPoints"`
+	ClosedIssuesCount int     `json:"closedIssuesCount"`
+	SprintIssues      *struct {
+		TotalCount int `json:"totalCount"`
+	} `json:"sprintIssues"`
+}
+
+// runWorkspaceStats implements `zh workspace stats`.
+func runWorkspaceStats(cmd *cobra.Command, args []string) error {
+	cfg, err := requireWorkspace()
+	if err != nil {
+		return err
+	}
+
+	client := newClient(cfg, cmd)
+	w := cmd.OutOrStdout()
+
+	data, err := client.Execute(workspaceStatsQuery, map[string]any{
+		"workspaceId": cfg.Workspace,
+		"sprintCount": workspaceStatsSprints,
+		"daysInCycle": workspaceStatsDays,
+	})
+	if err != nil {
+		return exitcode.General("fetching workspace stats", err)
+	}
+
+	var resp struct {
+		Workspace statsResponse `json:"workspace"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return exitcode.General("parsing workspace stats", err)
+	}
+
+	stats := resp.Workspace
+
+	if output.IsJSON(outputFormat) {
+		return output.JSON(w, stats)
+	}
+
+	d := output.NewDetailWriter(w, "WORKSPACE STATS", stats.DisplayName)
+
+	// Summary section
+	d.Section("SUMMARY")
+
+	issueCount := 0
+	prCount := 0
+	totalEstimates := 0.0
+	if stats.Issues.PipelineCounts != nil {
+		issueCount = stats.Issues.PipelineCounts.IssuesCount
+		prCount = stats.Issues.PipelineCounts.PullRequestsCount
+		totalEstimates = stats.Issues.PipelineCounts.SumEstimates
+	}
+
+	fmt.Fprintf(w, "%-20s%-20s%s\n",
+		fmt.Sprintf("Repositories: %d", stats.ReposConn.TotalCount),
+		fmt.Sprintf("Epics: %d", stats.EpicsConn.TotalCount),
+		fmt.Sprintf("Automations: %d", stats.AutomationsConn.TotalCount))
+	fmt.Fprintf(w, "%-20s%-20s%s\n",
+		fmt.Sprintf("Issues: %d", issueCount),
+		fmt.Sprintf("PRs: %d", prCount),
+		fmt.Sprintf("Dependencies: %d", stats.DepsConn.TotalCount))
+	fmt.Fprintf(w, "%-20s%-20s%s\n",
+		fmt.Sprintf("Estimates: %.0f pts", totalEstimates),
+		fmt.Sprintf("Priorities: %d", stats.PrioritiesConn.TotalCount),
+		fmt.Sprintf("Pipelines: %d", stats.PipelinesConn.TotalCount))
+
+	// Velocity section
+	hasSprints := stats.SprintConfig != nil
+	if hasSprints {
+		d.Section("VELOCITY")
+
+		if stats.VelocityWithDiff != nil && stats.VelocityWithDiff.SprintsCount > 0 {
+			vwd := stats.VelocityWithDiff
+			velocityStr := fmt.Sprintf("%.0f pts/sprint", vwd.Velocity)
+			if vwd.SprintsCount > 0 {
+				velocityStr += fmt.Sprintf(" (last %d sprints", vwd.SprintsCount)
+				if vwd.Difference != nil {
+					diff := *vwd.Difference
+					if diff > 0 {
+						velocityStr += fmt.Sprintf(", %s", output.Green(fmt.Sprintf("+%.0f trend", diff)))
+					} else if diff < 0 {
+						velocityStr += fmt.Sprintf(", %s", output.Red(fmt.Sprintf("%.0f trend", diff)))
+					}
+				}
+				velocityStr += ")"
+			}
+			fmt.Fprintf(w, "Average velocity: %s\n", velocityStr)
+		} else if stats.AvgVelocity != nil && *stats.AvgVelocity > 0 {
+			fmt.Fprintf(w, "Average velocity: %.0f pts/sprint\n", *stats.AvgVelocity)
+		} else {
+			fmt.Fprintln(w, "No velocity data available (no closed sprints yet).")
+		}
+
+		if stats.AssumeEstimates {
+			fmt.Fprintf(w, "Assumed estimates: %.0f pt (unestimated issues counted)\n", stats.AssumedEstimateValue)
+		}
+
+		// Sprint table
+		var sprintRows []statsSprint
+		if stats.ActiveSprint != nil {
+			sprintRows = append(sprintRows, *stats.ActiveSprint)
+		}
+		sprintRows = append(sprintRows, stats.Sprints.Nodes...)
+
+		if len(sprintRows) > 0 {
+			fmt.Fprintln(w)
+			lw := output.NewListWriter(w, "SPRINT", "DATES", "DONE", "TOTAL", "ISSUES")
+			for i, sp := range sprintRows {
+				name := sp.Name
+				if sp.Name == "" {
+					name = sp.GeneratedName
+				}
+
+				prefix := "  "
+				if i == 0 && stats.ActiveSprint != nil {
+					prefix = output.Green("▶ ")
+				}
+				name = prefix + name
+
+				dates := output.TableMissing
+				if sp.StartAt != "" && sp.EndAt != "" {
+					startAt, _ := time.Parse(time.RFC3339, sp.StartAt)
+					endAt, _ := time.Parse(time.RFC3339, sp.EndAt)
+					dates = output.FormatDateRange(startAt, endAt)
+				}
+
+				issueTotal := 0
+				if sp.SprintIssues != nil {
+					issueTotal = sp.SprintIssues.TotalCount
+				}
+
+				lw.Row(
+					name,
+					dates,
+					fmt.Sprintf("%.0f", sp.CompletedPoints),
+					fmt.Sprintf("%.0f", sp.TotalPoints),
+					fmt.Sprintf("%d/%d", sp.ClosedIssuesCount, issueTotal),
+				)
+			}
+			lw.Flush()
+		}
+	} else {
+		d.Section("VELOCITY")
+		fmt.Fprintln(w, "Sprints are not configured for this workspace.")
+	}
+
+	// Cycle time section
+	d.Section(fmt.Sprintf("CYCLE TIME (last %d days)", workspaceStatsDays))
+	if stats.IssueFlowStats != nil && stats.IssueFlowStats.AvgCycleDays != nil {
+		flow := stats.IssueFlowStats
+		fmt.Fprintf(w, "Average cycle:     %d days\n", *flow.AvgCycleDays)
+		if flow.InDevelopmentDays != nil {
+			fmt.Fprintf(w, "  In development:  %d days\n", *flow.InDevelopmentDays)
+		}
+		if flow.InReviewDays != nil {
+			fmt.Fprintf(w, "  In review:       %d days\n", *flow.InReviewDays)
+		}
+	} else {
+		fmt.Fprintln(w, "No cycle time data available.")
+		fmt.Fprintln(w, output.Dim("Issues may not have completed a full cycle, or pipeline stages may not be configured."))
+	}
+
+	// Pipeline distribution section
+	d.Section("PIPELINE DISTRIBUTION")
+	lw := output.NewListWriter(w, "PIPELINE", "STAGE", "ISSUES", "PRS", "ESTIMATES")
+	for _, p := range stats.PipelinesConn.Nodes {
+		stage := output.TableMissing
+		if p.Stage != nil && *p.Stage != "" {
+			stage = *p.Stage
+		}
+		issues := "0"
+		prs := "0"
+		estimates := "0"
+		if p.Issues.PipelineCounts != nil {
+			issues = fmt.Sprintf("%d", p.Issues.PipelineCounts.IssuesCount)
+			prs = fmt.Sprintf("%d", p.Issues.PipelineCounts.PullRequestsCount)
+			estimates = formatEstimate(p.Issues.PipelineCounts.SumEstimates)
+		}
+		lw.Row(p.Name, stage, issues, prs, estimates)
+	}
+	// Closed pipeline
+	if stats.ClosedPipeline != nil && stats.ClosedPipeline.Issues.PipelineCounts != nil {
+		pc := stats.ClosedPipeline.Issues.PipelineCounts
+		lw.Row(
+			output.Green("Closed"),
+			output.Green("DONE"),
+			fmt.Sprintf("%d", pc.IssuesCount),
+			fmt.Sprintf("%d", pc.PullRequestsCount),
+			formatEstimate(pc.SumEstimates),
+		)
+	}
+	lw.Flush()
+
+	return nil
+}
+
+// formatEstimate formats an estimate value, omitting decimal for whole numbers.
+func formatEstimate(v float64) string {
+	if v == float64(int(v)) {
+		return fmt.Sprintf("%.0f", v)
+	}
+	return fmt.Sprintf("%.1f", v)
 }

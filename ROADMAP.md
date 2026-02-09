@@ -96,12 +96,12 @@ These establish the foundation — workspace context is required for every other
 ### `zh workspace repos`
 - [x] List repos connected to current workspace
 - [x] Cache repo name → GitHub ID mappings (critical for issue resolution later)
-- [ ] With GitHub access: include description, language, stars
+- [x] With GitHub access: include description, language, stars
 - [x] Tests: with and without GitHub access
 
 ### `zh workspace stats`
-- [ ] Show workspace metrics (velocity, automations)
-- [ ] Tests: with data, empty workspace
+- [x] Show workspace metrics (velocity, automations)
+- [x] Tests: with data, empty workspace
 
 ## Phase 5: Identifier resolution
 

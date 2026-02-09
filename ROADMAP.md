@@ -61,13 +61,13 @@
 - [x] List view renderer: column-aligned tabular output with ALL CAPS headers and separator
 - [x] Mutation confirmation renderer: single-item, multi-item, partial failure, dry-run formats
 - [x] Progress bar renderer: `fraction unit (percentage)  bar` format with fixed 20-char bar
-- [ ] Markdown renderer using Glamour for user-authored content (issue descriptions, epic bodies)
+- [x] Markdown renderer using Glamour for user-authored content (issue descriptions, epic bodies)
 - [x] JSON output mode: structured output when `--output=json`
 - [x] Color support: palette per spec, respect `NO_COLOR` and non-TTY detection
 - [x] Date/time formatting: standalone dates, date ranges, ISO 8601 for JSON
 - [x] Missing value rendering: `-` in tables, `None` in detail views
-- [ ] Issue reference formatting: short form `repo#number`, long form when repos share names
-- [ ] `--limit` and `--all` flag support for list commands (default 100)
+- [x] Issue reference formatting: short form `repo#number`, long form when repos share names
+- [x] `--limit` and `--all` flag support for list commands (default 100)
 - [x] Tests: snapshot tests for each output format, color vs no-color, JSON mode
 
 ## Phase 4: Workspace commands

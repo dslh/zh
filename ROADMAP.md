@@ -122,15 +122,15 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] Tests: each identifier format, repo not found, ambiguous repo name
 
 ### Epic resolution
-- [ ] Resolve by: ZenHub ID, exact title, unique substring, alias, `owner/repo#number` (legacy)
-- [ ] Cache epic list (ID, title, type), invalidate-on-miss
-- [ ] Alias lookup from config
-- [ ] Tests: each resolution method, ambiguous match error
+- [x] Resolve by: ZenHub ID, exact title, unique substring, alias, `owner/repo#number` (legacy)
+- [x] Cache epic list (ID, title, type), invalidate-on-miss
+- [x] Alias lookup from config
+- [x] Tests: each resolution method, ambiguous match error
 
 ### Sprint resolution
-- [ ] Resolve by: ZenHub ID, name, unique substring, relative reference (`current`, `next`, `previous`)
-- [ ] Cache sprint list, invalidate-on-miss
-- [ ] Tests: each resolution method, no active sprint error
+- [x] Resolve by: ZenHub ID, name, unique substring, relative reference (`current`, `next`, `previous`)
+- [x] Cache sprint list, invalidate-on-miss
+- [x] Tests: each resolution method, no active sprint error
 
 ## Phase 6: Pipeline commands
 

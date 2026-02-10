@@ -257,7 +257,7 @@ func runPipelineEdit(cmd *cobra.Command, args []string) error {
 	// Check that at least one flag was provided
 	hasName := pipelineEditName != ""
 	hasPosition := pipelineEditPosition >= 0
-	hasDescription := pipelineEditDescription != ""
+	hasDescription := cmd.Flags().Changed("description")
 
 	if !hasName && !hasPosition && !hasDescription {
 		return exitcode.Usage("no changes specified — use --name, --position, or --description")
@@ -279,7 +279,11 @@ func runPipelineEdit(cmd *cobra.Command, args []string) error {
 			details = append(details, output.DetailLine{Key: "Position", Value: fmt.Sprintf("-> %d", pipelineEditPosition)})
 		}
 		if hasDescription {
-			details = append(details, output.DetailLine{Key: "Description", Value: fmt.Sprintf("-> %s", pipelineEditDescription)})
+			if pipelineEditDescription == "" {
+				details = append(details, output.DetailLine{Key: "Description", Value: "(clear)"})
+			} else {
+				details = append(details, output.DetailLine{Key: "Description", Value: fmt.Sprintf("-> %s", pipelineEditDescription)})
+			}
 		}
 		output.MutationDryRunDetail(w, msg, details)
 		return nil

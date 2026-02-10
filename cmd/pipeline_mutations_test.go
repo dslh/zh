@@ -244,6 +244,48 @@ func TestPipelineEditJSON(t *testing.T) {
 	}
 }
 
+func TestPipelineEditClearDescription(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListPipelines", pipelineResolutionResponse())
+	ms.HandleQuery("UpdatePipeline", updatePipelineResponse())
+	setupMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"pipeline", "edit", "In Development", "--description="})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("pipeline edit --description= returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Updated pipeline") {
+		t.Errorf("output should confirm update, got: %s", out)
+	}
+}
+
+func TestPipelineEditClearDescriptionDryRun(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListPipelines", pipelineResolutionResponse())
+	setupMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"pipeline", "edit", "In Development", "--description=", "--dry-run"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("pipeline edit --description= --dry-run returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Would update") {
+		t.Errorf("dry-run should use 'Would' prefix, got: %s", out)
+	}
+	if !strings.Contains(out, "(clear)") {
+		t.Errorf("dry-run should show '(clear)' for empty description, got: %s", out)
+	}
+}
+
 // --- pipeline delete ---
 
 func TestPipelineDelete(t *testing.T) {

@@ -1,6 +1,9 @@
 package exitcode
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // Error is an error that carries an exit code.
 type Error struct {
@@ -26,7 +29,8 @@ func ExitCode(err error) int {
 	if err == nil {
 		return Success
 	}
-	if e, ok := err.(*Error); ok {
+	var e *Error
+	if errors.As(err, &e) {
 		return e.Code
 	}
 	return GeneralError

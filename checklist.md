@@ -33,8 +33,8 @@
 - [x] `zh issue label <issue>`
 - [x] `zh issue close <issue>...`
 - [x] `zh issue reopen <issue>...`
-- [ ] `zh issue connect <pr> <issue>`
-- [ ] `zh issue disconnect <pr> <issue>`
+- [x] `zh issue connect <pr> <issue>`
+- [x] `zh issue disconnect <pr> <issue>`
 - [ ] `zh issue block <blocker> <blocked>`
 - [ ] `zh issue blockers <issue>`
 - [ ] `zh issue blocking <issue>`

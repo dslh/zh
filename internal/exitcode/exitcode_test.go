@@ -2,6 +2,7 @@ package exitcode
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -17,6 +18,8 @@ func TestExitCodeFromTypedErrors(t *testing.T) {
 		{"auth error", Auth("bad key", nil), AuthFailure},
 		{"not found error", NotFoundError("issue not found"), NotFound},
 		{"plain error", errors.New("something"), GeneralError},
+		{"wrapped not found", fmt.Errorf("resolving: %w", NotFoundError("issue not found")), NotFound},
+		{"wrapped auth", fmt.Errorf("outer: %w", Auth("bad key", nil)), AuthFailure},
 	}
 
 	for _, tt := range tests {

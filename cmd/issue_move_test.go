@@ -350,7 +350,7 @@ func setupIssueMoveServer(t *testing.T) *testutil.MockServer {
 	ms.HandleQuery("IssueByInfo", issueByInfoResolutionResponse())
 	ms.HandleQuery("GetPipelineIssueId", pipelineIssueIDResponse("i1", 1, "Fix login button alignment", "pi1", "p2", "In Development"))
 	ms.HandleQuery("MoveIssue", moveIssueResponse())
-	ms.HandleQuery("MoveIssueRelativeTo", moveIssueRelativeResponse())
+	ms.HandleQuery("MovePipelineIssues", movePipelineIssuesResponse())
 	ms.HandleQuery("ListRepos", repoResolutionResponse())
 
 	_ = cache.Set(resolve.RepoCacheKey("ws-123"), []resolve.CachedRepo{
@@ -409,7 +409,7 @@ func setupIssueMoveServerBatch(t *testing.T) *testutil.MockServer {
 	)
 
 	ms.HandleQuery("MoveIssue", moveIssueResponse())
-	ms.HandleQuery("MoveIssueRelativeTo", moveIssueRelativeResponse())
+	ms.HandleQuery("MovePipelineIssues", movePipelineIssuesResponse())
 
 	_ = cache.Set(resolve.RepoCacheKey("ws-123"), []resolve.CachedRepo{
 		{ID: "r1", GhID: 12345, Name: "task-tracker", OwnerName: "dlakehammond"},
@@ -472,7 +472,7 @@ func setupIssueMoveServerMixed(t *testing.T) *testutil.MockServer {
 
 	ms.HandleQuery("GetPipelineIssueId", pipelineIssueIDResponse("i1", 1, "Fix login button alignment", "pi1", "p2", "In Development"))
 	ms.HandleQuery("MoveIssue", moveIssueResponse())
-	ms.HandleQuery("MoveIssueRelativeTo", moveIssueRelativeResponse())
+	ms.HandleQuery("MovePipelineIssues", movePipelineIssuesResponse())
 
 	_ = cache.Set(resolve.RepoCacheKey("ws-123"), []resolve.CachedRepo{
 		{ID: "r1", GhID: 12345, Name: "task-tracker", OwnerName: "dlakehammond"},
@@ -542,19 +542,10 @@ func moveIssueResponse() map[string]any {
 	}
 }
 
-func moveIssueRelativeResponse() map[string]any {
+func movePipelineIssuesResponse() map[string]any {
 	return map[string]any{
 		"data": map[string]any{
-			"moveIssueRelativeTo": map[string]any{
-				"issue": map[string]any{
-					"id":     "i1",
-					"number": 1,
-					"title":  "Fix login button alignment",
-					"repository": map[string]any{
-						"name":      "task-tracker",
-						"ownerName": "dlakehammond",
-					},
-				},
+			"movePipelineIssues": map[string]any{
 				"pipeline": map[string]any{
 					"id":   "p3",
 					"name": "Done",

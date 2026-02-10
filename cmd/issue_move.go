@@ -55,17 +55,8 @@ const moveIssueMutation = `mutation MoveIssue($input: MoveIssueInput!) {
   }
 }`
 
-const moveIssueRelativeToMutation = `mutation MoveIssueRelativeTo($input: MoveIssueRelativeToInput!) {
-  moveIssueRelativeTo(input: $input) {
-    issue {
-      id
-      number
-      title
-      repository {
-        name
-        ownerName
-      }
-    }
+const movePipelineIssuesMutation = `mutation MovePipelineIssues($input: MovePipelineIssuesInput!) {
+  movePipelineIssues(input: $input) {
     pipeline {
       id
       name
@@ -370,20 +361,20 @@ func executeMoveIssue(client *api.Client, issue resolvedMoveIssue, targetPipelin
 		return nil
 	}
 
-	// Use moveIssueRelativeTo for top/bottom/default
+	// Use movePipelineIssues for top/bottom/default
 	input := map[string]any{
-		"issueId":    issue.IssueID,
-		"pipelineId": targetPipelineID,
+		"pipelineId":       targetPipelineID,
+		"pipelineIssueIds": []string{issue.PipelineIssueID},
 	}
 
 	switch posType {
 	case posTop:
 		input["position"] = "START"
-	case posBottom:
+	default:
 		input["position"] = "END"
 	}
 
-	_, err := client.Execute(moveIssueRelativeToMutation, map[string]any{"input": input})
+	_, err := client.Execute(movePipelineIssuesMutation, map[string]any{"input": input})
 	if err != nil {
 		return exitcode.General(fmt.Sprintf("moving %s", issue.Ref()), err)
 	}

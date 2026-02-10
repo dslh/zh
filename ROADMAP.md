@@ -416,13 +416,13 @@ Build the resolution layer now — almost every subsequent command depends on it
 ## Phase 13: Utility commands
 
 ### `zh label list`
-- [ ] List all labels in workspace (aggregated across repos)
-- [ ] Tests: with labels, no labels
+- [x] List all labels in workspace (aggregated across repos)
+- [x] Tests: with labels, no labels
 
 ### `zh priority list`
-- [ ] List workspace priorities with colors
-- [ ] Cache priorities
-- [ ] Tests: with priorities, none configured
+- [x] List workspace priorities with colors
+- [x] Cache priorities
+- [x] Tests: with priorities, none configured
 
 ## Phase 14: --help and --dry-run audit
 

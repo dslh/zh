@@ -13,7 +13,7 @@
 - [x] `zh epic create`
 - [x] `zh epic edit <epic>`
 - [x] `zh epic delete <epic>`
-- [ ] `zh epic set-state <epic> <state>`
+- [x] `zh epic set-state <epic> <state>`
 - [ ] `zh epic set-dates <epic>`
 - [ ] `zh epic estimate <epic>`
 - [ ] `zh epic progress <epic>`

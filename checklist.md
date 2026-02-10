@@ -58,7 +58,7 @@
 ## sprint
 - [x] `zh sprint list`
 - [x] `zh sprint show <sprint>`
-- [ ] `zh sprint add <sprint> <issue>...`
+- [x] `zh sprint add <sprint> <issue>...`
 - [ ] `zh sprint remove <sprint> <issue>...`
 - [ ] `zh sprint review <sprint>`
 - [ ] `zh sprint scope <sprint>`

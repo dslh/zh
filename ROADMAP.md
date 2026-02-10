@@ -293,20 +293,20 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] Tests: create with flags, dry run
 
 ### `zh epic edit <epic>`
-- [ ] `--title`, `--body` flags
-- [ ] `--dry-run` support
-- [ ] Tests: edit each field, dry run
+- [x] `--title`, `--body` flags
+- [x] `--dry-run` support
+- [x] Tests: edit each field, dry run
 
 ### `zh epic delete <epic>`
-- [ ] `--dry-run`: show child issue count
-- [ ] Invalidate epic cache
-- [ ] Tests: delete, dry run
+- [x] `--dry-run`: show child issue count
+- [x] Invalidate epic cache
+- [x] Tests: delete, dry run
 
 ### `zh epic set-state <epic> <state>`
-- [ ] States: `open`, `todo`, `in_progress`, `closed`
-- [ ] `--apply-to-issues` flag
-- [ ] `--dry-run` support
-- [ ] Tests: each state transition, apply-to-issues
+- [x] States: `open`, `todo`, `in_progress`, `closed`
+- [x] `--apply-to-issues` flag
+- [x] `--dry-run` support
+- [x] Tests: each state transition, apply-to-issues
 
 ### `zh epic set-dates <epic>`
 - [ ] `--start=<date>`, `--end=<date>` flags

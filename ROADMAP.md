@@ -380,15 +380,15 @@ Build the resolution layer now — almost every subsequent command depends on it
 ## Phase 12: Sprint commands
 
 ### `zh sprint list`
-- [ ] List sprints: active, upcoming, recent
-- [ ] Cache sprint list
-- [ ] Tests: with sprints, sprints not configured
+- [x] List sprints: active, upcoming, recent
+- [x] Cache sprint list
+- [x] Tests: with sprints, sprints not configured
 
 ### `zh sprint show [sprint]`
-- [ ] Default to active sprint
-- [ ] Display: name, dates, issues with estimates and pipeline
+- [x] Default to active sprint
+- [x] Display: name, dates, issues with estimates and pipeline
 - [ ] `--interactive` mode
-- [ ] Tests: active sprint, named sprint, no active sprint
+- [x] Tests: active sprint, named sprint, no active sprint
 
 ### `zh sprint add <issue>...`
 - [ ] Default to active sprint, `--sprint=<id>` to target specific

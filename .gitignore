@@ -4,6 +4,7 @@ credentials.md
 
 # Build output
 zh
+dist/
 
 # Test state
 test/config/

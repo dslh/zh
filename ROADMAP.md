@@ -459,11 +459,11 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] `zh completion <shell>` command with install instructions
 
 ### Distribution
-- [ ] goreleaser config: binary builds for macOS (arm64, amd64), Linux (arm64, amd64)
-- [ ] Homebrew formula generation
-- [ ] `go install` compatibility
-- [ ] Wire build vars (version, commit, date) into `zh version`
-- [ ] GitHub Actions CI: test, lint, release on tag
+- [x] goreleaser config: binary builds for macOS (arm64, amd64), Linux (arm64, amd64)
+- [x] Homebrew formula generation
+- [x] `go install` compatibility
+- [x] Wire build vars (version, commit, date) into `zh version`
+- [x] GitHub Actions CI: test, lint, release on tag
 
 ## Phase 17: Legacy epic support (deferred)
 

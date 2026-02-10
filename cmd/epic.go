@@ -101,6 +101,10 @@ type epicDetailZenhub struct {
 		TotalCount int               `json:"totalCount"`
 		Nodes      []json.RawMessage `json:"nodes"`
 	} `json:"blockedItems"`
+	KeyDates struct {
+		TotalCount int           `json:"totalCount"`
+		Nodes      []keyDateNode `json:"nodes"`
+	} `json:"keyDates"`
 }
 
 type epicDetailLegacy struct {
@@ -303,6 +307,15 @@ const epicShowZenhubQuery = `query GetZenhubEpic($id: ID!, $workspaceId: ID!) {
             id
             title
           }
+        }
+      }
+      keyDates(first: 50) {
+        totalCount
+        nodes {
+          id
+          date
+          description
+          color
         }
       }
     }
@@ -835,6 +848,14 @@ func runEpicShowZenhub(client *api.Client, workspaceID, epicID string, w writerF
 	if epic.BlockedItems.TotalCount > 0 {
 		d.Section("BLOCKED BY")
 		renderBlockItems(w, epic.BlockedItems.Nodes)
+	}
+
+	// Key dates section
+	if epic.KeyDates.TotalCount > 0 {
+		d.Section(fmt.Sprintf("KEY DATES (%d)", epic.KeyDates.TotalCount))
+		for _, kd := range epic.KeyDates.Nodes {
+			fmt.Fprintf(w, "  %s  %s\n", kd.Date, kd.Description)
+		}
 	}
 
 	// Description section

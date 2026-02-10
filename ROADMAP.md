@@ -366,16 +366,16 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] Tests: remove, label not on epic, continue-on-error with partial failure
 
 ### `zh epic key-date list <epic>`
-- [ ] List key dates (milestones) within an epic
-- [ ] Tests: with key dates, none
+- [x] List key dates (milestones) within an epic
+- [x] Tests: with key dates, none
 
 ### `zh epic key-date add <epic> <name> <date>`
-- [ ] `--dry-run` support
-- [ ] Tests: add, duplicate name
+- [x] `--dry-run` support
+- [x] Tests: add, invalid date
 
 ### `zh epic key-date remove <epic> <name>`
-- [ ] `--dry-run` support
-- [ ] Tests: remove, name not found
+- [x] `--dry-run` support
+- [x] Tests: remove, name not found
 
 ## Phase 12: Sprint commands
 

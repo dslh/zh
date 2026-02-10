@@ -1381,8 +1381,12 @@ func TestEpicAddJSON(t *testing.T) {
 	}
 }
 
-func TestEpicAddLegacyError(t *testing.T) {
+func TestEpicAddLegacy(t *testing.T) {
 	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListRepos", repoListForEpicResponse())
+	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
+	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
+	ms.HandleREST("update_issues", 200, map[string]any{})
 	setupEpicMutationTest(t, ms)
 
 	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
@@ -1391,15 +1395,82 @@ func TestEpicAddLegacyError(t *testing.T) {
 
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)
-	rootCmd.SetErr(buf)
 	rootCmd.SetArgs([]string{"epic", "add", "Bug Tracker", "task-tracker#1"})
 
-	err := rootCmd.Execute()
-	if err == nil {
-		t.Fatal("epic add on legacy epic should return error")
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic add on legacy epic returned error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "legacy epic") {
-		t.Errorf("error should mention legacy epic, got: %v", err)
+
+	out := buf.String()
+	if !strings.Contains(out, "Added") {
+		t.Errorf("output should confirm addition, got: %s", out)
+	}
+	if !strings.Contains(out, "legacy epic") {
+		t.Errorf("output should mention legacy epic, got: %s", out)
+	}
+}
+
+func TestEpicAddLegacyDryRun(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListRepos", repoListForEpicResponse())
+	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
+	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
+	setupEpicMutationTest(t, ms)
+
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "add", "Bug Tracker", "task-tracker#1", "--dry-run"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic add legacy dry-run returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Would add") {
+		t.Errorf("dry-run should use 'Would add' prefix, got: %s", out)
+	}
+	if !strings.Contains(out, "legacy epic") {
+		t.Errorf("dry-run should mention legacy epic, got: %s", out)
+	}
+}
+
+func TestEpicAddLegacyJSON(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListRepos", repoListForEpicResponse())
+	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
+	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
+	ms.HandleREST("update_issues", 200, map[string]any{})
+	setupEpicMutationTest(t, ms)
+
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "add", "Bug Tracker", "task-tracker#1"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic add legacy JSON returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nOutput: %s", err, buf.String())
+	}
+	epic := result["epic"].(map[string]any)
+	if epic["issue"] != "dlakehammond/task-tracker#1" {
+		t.Errorf("JSON epic should contain issue ref, got: %v", epic["issue"])
+	}
+	if result["added"] == nil {
+		t.Error("JSON should contain added field")
 	}
 }
 
@@ -1576,8 +1647,12 @@ func TestEpicRemoveJSON(t *testing.T) {
 	}
 }
 
-func TestEpicRemoveLegacyError(t *testing.T) {
+func TestEpicRemoveLegacy(t *testing.T) {
 	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListRepos", repoListForEpicResponse())
+	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
+	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
+	ms.HandleREST("update_issues", 200, map[string]any{})
 	setupEpicMutationTest(t, ms)
 
 	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
@@ -1586,15 +1661,159 @@ func TestEpicRemoveLegacyError(t *testing.T) {
 
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)
-	rootCmd.SetErr(buf)
 	rootCmd.SetArgs([]string{"epic", "remove", "Bug Tracker", "task-tracker#1"})
 
-	err := rootCmd.Execute()
-	if err == nil {
-		t.Fatal("epic remove on legacy epic should return error")
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic remove on legacy epic returned error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "legacy epic") {
-		t.Errorf("error should mention legacy epic, got: %v", err)
+
+	out := buf.String()
+	if !strings.Contains(out, "Removed") {
+		t.Errorf("output should confirm removal, got: %s", out)
+	}
+	if !strings.Contains(out, "legacy epic") {
+		t.Errorf("output should mention legacy epic, got: %s", out)
+	}
+}
+
+func TestEpicRemoveLegacyDryRun(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListRepos", repoListForEpicResponse())
+	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
+	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
+	setupEpicMutationTest(t, ms)
+
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "remove", "Bug Tracker", "task-tracker#1", "--dry-run"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic remove legacy dry-run returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Would remove") {
+		t.Errorf("dry-run should use 'Would remove' prefix, got: %s", out)
+	}
+	if !strings.Contains(out, "legacy epic") {
+		t.Errorf("dry-run should mention legacy epic, got: %s", out)
+	}
+}
+
+func TestEpicRemoveLegacyJSON(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListRepos", repoListForEpicResponse())
+	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
+	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
+	ms.HandleREST("update_issues", 200, map[string]any{})
+	setupEpicMutationTest(t, ms)
+
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "remove", "Bug Tracker", "task-tracker#1"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic remove legacy JSON returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nOutput: %s", err, buf.String())
+	}
+	epic := result["epic"].(map[string]any)
+	if epic["issue"] != "dlakehammond/task-tracker#1" {
+		t.Errorf("JSON epic should contain issue ref, got: %v", epic["issue"])
+	}
+	if result["removed"] == nil {
+		t.Error("JSON should contain removed field")
+	}
+}
+
+func TestEpicRemoveAllLegacy(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListRepos", repoListForEpicResponse())
+	ms.HandleQuery("GetEpicChildIssueIDs", epicChildIssueIDsResponse())
+	ms.HandleREST("update_issues", 200, map[string]any{})
+	setupEpicMutationTest(t, ms)
+
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "remove", "Bug Tracker", "--all"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic remove --all on legacy epic returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Removed all") {
+		t.Errorf("output should confirm removing all, got: %s", out)
+	}
+	if !strings.Contains(out, "legacy epic") {
+		t.Errorf("output should mention legacy epic, got: %s", out)
+	}
+}
+
+func TestEpicRemoveAllLegacyDryRun(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("GetEpicChildIssueIDs", epicChildIssueIDsResponse())
+	setupEpicMutationTest(t, ms)
+
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "remove", "Bug Tracker", "--all", "--dry-run"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic remove --all --dry-run legacy returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Would remove all") {
+		t.Errorf("dry-run should use 'Would remove all' prefix, got: %s", out)
+	}
+	if !strings.Contains(out, "legacy epic") {
+		t.Errorf("dry-run should mention legacy epic, got: %s", out)
+	}
+}
+
+func TestEpicRemoveAllLegacyEmpty(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("GetEpicChildIssueIDs", epicChildIssueIDsEmptyResponse())
+	setupEpicMutationTest(t, ms)
+
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "remove", "Bug Tracker", "--all"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic remove --all (empty) on legacy epic returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "no child issues") {
+		t.Errorf("output should say no child issues, got: %s", out)
 	}
 }
 

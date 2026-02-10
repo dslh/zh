@@ -470,6 +470,6 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] Detect epic type (ZenHub vs legacy) during resolution
 - [x] `zh epic edit` for legacy epics via GitHub API
 - [x] `zh epic set-state` for legacy epics via GitHub API
-- [ ] `zh epic add` / `zh epic remove` for legacy epics (blocked: ZenHub GraphQL API has no mutation for legacy epic child issues — would require REST API v1 support)
+- [x] `zh epic add` / `zh epic remove` for legacy epics via ZenHub REST API v1
 - [x] Graceful error when GitHub access not configured
 - [x] Tests: each operation for both epic types

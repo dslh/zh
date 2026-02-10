@@ -14,15 +14,21 @@ type GraphQLRequest struct {
 	Variables json.RawMessage `json:"variables"`
 }
 
-// MockServer is a test HTTP server that serves canned GraphQL responses.
+// MockServer is a test HTTP server that serves canned GraphQL and REST responses.
 type MockServer struct {
-	Server   *httptest.Server
-	handlers []handler
+	Server       *httptest.Server
+	handlers     []handler
+	restHandlers []restHandler
 }
 
 type handler struct {
-	match    func(GraphQLRequest) bool
-	respond  func(http.ResponseWriter, GraphQLRequest)
+	match   func(GraphQLRequest) bool
+	respond func(http.ResponseWriter, GraphQLRequest)
+}
+
+type restHandler struct {
+	pathSubstring string
+	respond       func(http.ResponseWriter, *http.Request)
 }
 
 // NewMockServer creates a new mock GraphQL server.
@@ -36,6 +42,14 @@ func NewMockServer(t *testing.T) *MockServer {
 		if r.Method != http.MethodPost {
 			http.Error(w, "expected POST", http.StatusMethodNotAllowed)
 			return
+		}
+
+		// Check REST handlers first (path-based routing)
+		for _, h := range ms.restHandlers {
+			if containsSubstring(r.URL.Path, h.pathSubstring) {
+				h.respond(w, r)
+				return
+			}
 		}
 
 		var req GraphQLRequest
@@ -85,6 +99,24 @@ func (ms *MockServer) HandleQuery(querySubstring string, responseBody any) {
 			_, _ = w.Write(data)
 		},
 	)
+}
+
+// HandleREST registers a handler that responds to REST API calls where the
+// request path contains the given substring.
+func (ms *MockServer) HandleREST(pathSubstring string, statusCode int, responseBody any) {
+	data, err := json.Marshal(responseBody)
+	if err != nil {
+		panic("testutil: failed to marshal response: " + err.Error())
+	}
+
+	ms.restHandlers = append(ms.restHandlers, restHandler{
+		pathSubstring: pathSubstring,
+		respond: func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(statusCode)
+			_, _ = w.Write(data)
+		},
+	})
 }
 
 func containsSubstring(s, sub string) bool {

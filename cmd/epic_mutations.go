@@ -327,7 +327,7 @@ Examples:
 var epicAddCmd = &cobra.Command{
 	Use:   "add <epic> <issue>...",
 	Short: "Add issues to an epic",
-	Long: `Add one or more issues to a ZenHub epic.
+	Long: `Add one or more issues to an epic (ZenHub or legacy).
 
 Issues can be specified as repo#number, owner/repo#number, ZenHub IDs,
 or bare numbers with --repo.
@@ -342,7 +342,7 @@ Examples:
 var epicRemoveCmd = &cobra.Command{
 	Use:   "remove <epic> <issue>...",
 	Short: "Remove issues from an epic",
-	Long: `Remove one or more issues from a ZenHub epic.
+	Long: `Remove one or more issues from an epic (ZenHub or legacy).
 
 Issues can be specified as repo#number, owner/repo#number, ZenHub IDs,
 or bare numbers with --repo. Use --all to remove all issues.
@@ -1429,6 +1429,7 @@ func formatDatePointer(d *string) string {
 type resolvedEpicIssue struct {
 	ID        string
 	Number    int
+	RepoGhID  int
 	RepoName  string
 	RepoOwner string
 	Title     string
@@ -1493,6 +1494,7 @@ func resolveIssueForEpic(client *api.Client, workspaceID, identifier, repoFlag s
 	return &resolvedEpicIssue{
 		ID:        resp.Node.ID,
 		Number:    resp.Node.Number,
+		RepoGhID:  result.RepoGhID,
 		Title:     resp.Node.Title,
 		RepoName:  resp.Node.Repository.Name,
 		RepoOwner: resp.Node.Repository.OwnerName,
@@ -1514,11 +1516,6 @@ func runEpicAdd(cmd *cobra.Command, args []string) error {
 	resolved, err := resolve.Epic(client, cfg.Workspace, args[0], cfg.Aliases.Epics)
 	if err != nil {
 		return err
-	}
-
-	if resolved.Type == "legacy" {
-		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by GitHub issue %s/%s#%d) — adding child issues to legacy epics is not supported via the API\n\nUse the ZenHub web UI to manage child issues, or convert to a ZenHub epic",
-			resolved.Title, resolved.RepoOwner, resolved.RepoName, resolved.IssueNumber))
 	}
 
 	// Resolve issue identifiers
@@ -1543,6 +1540,10 @@ func runEpicAdd(cmd *cobra.Command, args []string) error {
 
 	if len(issues) == 0 && len(failed) > 0 {
 		return exitcode.Generalf("all issues failed to resolve")
+	}
+
+	if resolved.Type == "legacy" {
+		return runEpicAddLegacy(client, cfg, w, resolved, issues, failed)
 	}
 
 	// Dry run
@@ -1612,6 +1613,92 @@ func runEpicAdd(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// runEpicAddLegacy adds issues to a legacy epic via the ZenHub REST API v1.
+func runEpicAddLegacy(client *api.Client, cfg *config.Config, w writerFlusher, resolved *resolve.EpicResult, issues []resolvedEpicIssue, failed []output.FailedItem) error {
+	ref := legacyEpicRef(resolved)
+
+	// Look up the epic's repo GhID
+	epicRepo, err := resolve.LookupRepoWithRefresh(client, cfg.Workspace, resolved.RepoOwner+"/"+resolved.RepoName)
+	if err != nil {
+		return exitcode.General(fmt.Sprintf("resolving repository for legacy epic %s", ref), err)
+	}
+
+	// Dry run
+	if epicAddDryRun {
+		return renderEpicAddLegacyDryRun(w, resolved, ref, issues, failed)
+	}
+
+	// Build REST API issue refs
+	addIssues := make([]api.RESTIssueRef, len(issues))
+	for i, iss := range issues {
+		addIssues[i] = api.RESTIssueRef{
+			RepoID:      iss.RepoGhID,
+			IssueNumber: iss.Number,
+		}
+	}
+
+	if err := client.UpdateEpicIssues(epicRepo.GhID, resolved.IssueNumber, addIssues, nil); err != nil {
+		return exitcode.General("adding issues to legacy epic", err)
+	}
+
+	// Build succeeded list
+	succeeded := make([]output.MutationItem, len(issues))
+	for i, iss := range issues {
+		succeeded[i] = output.MutationItem{
+			Ref:   iss.Ref(),
+			Title: truncateTitle(iss.Title),
+		}
+	}
+
+	// JSON output
+	if output.IsJSON(outputFormat) {
+		return output.JSON(w, map[string]any{
+			"epic":  map[string]any{"id": resolved.ID, "title": resolved.Title, "issue": ref},
+			"added": formatEpicIssueItemsJSON(issues),
+		})
+	}
+
+	// Render output
+	if len(failed) > 0 {
+		totalAttempted := len(succeeded) + len(failed)
+		header := output.Green(fmt.Sprintf("Added %d of %d issue(s) to legacy epic %q (%s).", len(succeeded), totalAttempted, resolved.Title, ref))
+		output.MutationPartialFailure(w, header, succeeded, failed)
+		return exitcode.Generalf("some issues failed to resolve")
+	} else if len(succeeded) == 1 {
+		output.MutationSingle(w, output.Green(fmt.Sprintf("Added %s to legacy epic %q (%s).", succeeded[0].Ref, resolved.Title, ref)))
+	} else {
+		header := output.Green(fmt.Sprintf("Added %d issue(s) to legacy epic %q (%s).", len(succeeded), resolved.Title, ref))
+		output.MutationBatch(w, header, succeeded)
+	}
+
+	return nil
+}
+
+func renderEpicAddLegacyDryRun(w writerFlusher, epic *resolve.EpicResult, ref string, issues []resolvedEpicIssue, failed []output.FailedItem) error {
+	if len(issues) > 0 {
+		items := make([]output.MutationItem, len(issues))
+		for i, iss := range issues {
+			items[i] = output.MutationItem{
+				Ref:   iss.Ref(),
+				Title: truncateTitle(iss.Title),
+			}
+		}
+		header := fmt.Sprintf("Would add %d issue(s) to legacy epic %q (%s)", len(issues), epic.Title, ref)
+		output.MutationDryRun(w, header, items)
+	}
+
+	if len(failed) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, output.Red("Failed to resolve:"))
+		fmt.Fprintln(w)
+		for _, f := range failed {
+			fmt.Fprintf(w, "  %s  %s\n", f.Ref, output.Red(f.Reason))
+		}
+	}
+
+	return nil
+}
+
 func renderEpicAddDryRun(w writerFlusher, epic *resolve.EpicResult, issues []resolvedEpicIssue, failed []output.FailedItem) error {
 	if len(issues) > 0 {
 		items := make([]output.MutationItem, len(issues))
@@ -1654,13 +1741,11 @@ func runEpicRemove(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if resolved.Type == "legacy" {
-		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by GitHub issue %s/%s#%d) — removing child issues from legacy epics is not supported via the API\n\nUse the ZenHub web UI to manage child issues, or convert to a ZenHub epic",
-			resolved.Title, resolved.RepoOwner, resolved.RepoName, resolved.IssueNumber))
-	}
-
 	// Handle --all flag
 	if epicRemoveAll {
+		if resolved.Type == "legacy" {
+			return runEpicRemoveAllLegacy(client, cfg, w, resolved)
+		}
 		return runEpicRemoveAll(client, cfg, w, resolved)
 	}
 
@@ -1690,6 +1775,10 @@ func runEpicRemove(cmd *cobra.Command, args []string) error {
 
 	if len(issues) == 0 && len(failed) > 0 {
 		return exitcode.Generalf("all issues failed to resolve")
+	}
+
+	if resolved.Type == "legacy" {
+		return runEpicRemoveLegacy(client, cfg, w, resolved, issues, failed)
 	}
 
 	// Dry run
@@ -1754,6 +1843,162 @@ func runEpicRemove(cmd *cobra.Command, args []string) error {
 		header := output.Green(fmt.Sprintf("Removed %d issue(s) from epic %q.", len(succeeded), resolved.Title))
 		output.MutationBatch(w, header, succeeded)
 	}
+
+	return nil
+}
+
+// runEpicRemoveLegacy removes issues from a legacy epic via the ZenHub REST API v1.
+func runEpicRemoveLegacy(client *api.Client, cfg *config.Config, w writerFlusher, resolved *resolve.EpicResult, issues []resolvedEpicIssue, failed []output.FailedItem) error {
+	ref := legacyEpicRef(resolved)
+
+	// Look up the epic's repo GhID
+	epicRepo, err := resolve.LookupRepoWithRefresh(client, cfg.Workspace, resolved.RepoOwner+"/"+resolved.RepoName)
+	if err != nil {
+		return exitcode.General(fmt.Sprintf("resolving repository for legacy epic %s", ref), err)
+	}
+
+	// Dry run
+	if epicRemoveDryRun {
+		return renderEpicRemoveLegacyDryRun(w, resolved, ref, issues, failed)
+	}
+
+	// Build REST API issue refs
+	removeIssues := make([]api.RESTIssueRef, len(issues))
+	for i, iss := range issues {
+		removeIssues[i] = api.RESTIssueRef{
+			RepoID:      iss.RepoGhID,
+			IssueNumber: iss.Number,
+		}
+	}
+
+	if err := client.UpdateEpicIssues(epicRepo.GhID, resolved.IssueNumber, nil, removeIssues); err != nil {
+		return exitcode.General("removing issues from legacy epic", err)
+	}
+
+	// Build succeeded list
+	succeeded := make([]output.MutationItem, len(issues))
+	for i, iss := range issues {
+		succeeded[i] = output.MutationItem{
+			Ref:   iss.Ref(),
+			Title: truncateTitle(iss.Title),
+		}
+	}
+
+	// JSON output
+	if output.IsJSON(outputFormat) {
+		return output.JSON(w, map[string]any{
+			"epic":    map[string]any{"id": resolved.ID, "title": resolved.Title, "issue": ref},
+			"removed": formatEpicIssueItemsJSON(issues),
+		})
+	}
+
+	// Render output
+	if len(failed) > 0 {
+		totalAttempted := len(succeeded) + len(failed)
+		header := output.Green(fmt.Sprintf("Removed %d of %d issue(s) from legacy epic %q (%s).", len(succeeded), totalAttempted, resolved.Title, ref))
+		output.MutationPartialFailure(w, header, succeeded, failed)
+		return exitcode.Generalf("some issues failed to resolve")
+	} else if len(succeeded) == 1 {
+		output.MutationSingle(w, output.Green(fmt.Sprintf("Removed %s from legacy epic %q (%s).", succeeded[0].Ref, resolved.Title, ref)))
+	} else {
+		header := output.Green(fmt.Sprintf("Removed %d issue(s) from legacy epic %q (%s).", len(succeeded), resolved.Title, ref))
+		output.MutationBatch(w, header, succeeded)
+	}
+
+	return nil
+}
+
+func renderEpicRemoveLegacyDryRun(w writerFlusher, epic *resolve.EpicResult, ref string, issues []resolvedEpicIssue, failed []output.FailedItem) error {
+	if len(issues) > 0 {
+		items := make([]output.MutationItem, len(issues))
+		for i, iss := range issues {
+			items[i] = output.MutationItem{
+				Ref:   iss.Ref(),
+				Title: truncateTitle(iss.Title),
+			}
+		}
+		header := fmt.Sprintf("Would remove %d issue(s) from legacy epic %q (%s)", len(issues), epic.Title, ref)
+		output.MutationDryRun(w, header, items)
+	}
+
+	if len(failed) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, output.Red("Failed to resolve:"))
+		fmt.Fprintln(w)
+		for _, f := range failed {
+			fmt.Fprintf(w, "  %s  %s\n", f.Ref, output.Red(f.Reason))
+		}
+	}
+
+	return nil
+}
+
+// runEpicRemoveAllLegacy removes all child issues from a legacy epic via the ZenHub REST API v1.
+func runEpicRemoveAllLegacy(client *api.Client, cfg *config.Config, w writerFlusher, resolved *resolve.EpicResult) error {
+	ref := legacyEpicRef(resolved)
+
+	// Fetch all child issues via GraphQL
+	issues, err := fetchAllEpicChildIssues(client, cfg.Workspace, resolved.ID)
+	if err != nil {
+		return err
+	}
+
+	if len(issues) == 0 {
+		if output.IsJSON(outputFormat) {
+			return output.JSON(w, map[string]any{
+				"epic":    map[string]any{"id": resolved.ID, "title": resolved.Title, "issue": ref},
+				"removed": []any{},
+			})
+		}
+		fmt.Fprintf(w, "Legacy epic %q (%s) has no child issues.\n", resolved.Title, ref)
+		return nil
+	}
+
+	if epicRemoveDryRun {
+		items := make([]output.MutationItem, len(issues))
+		for i, iss := range issues {
+			items[i] = output.MutationItem{
+				Ref:   iss.Ref(),
+				Title: truncateTitle(iss.Title),
+			}
+		}
+		header := fmt.Sprintf("Would remove all %d issue(s) from legacy epic %q (%s)", len(issues), resolved.Title, ref)
+		output.MutationDryRun(w, header, items)
+		return nil
+	}
+
+	// Look up the epic's repo GhID
+	epicRepo, err := resolve.LookupRepoWithRefresh(client, cfg.Workspace, resolved.RepoOwner+"/"+resolved.RepoName)
+	if err != nil {
+		return exitcode.General(fmt.Sprintf("resolving repository for legacy epic %s", ref), err)
+	}
+
+	// We need RepoGhID for each issue. The fetchAllEpicChildIssues query only
+	// returns RepoName/RepoOwner. Resolve GhIDs from the repo cache.
+	removeIssues := make([]api.RESTIssueRef, len(issues))
+	for i, iss := range issues {
+		repo, err := resolve.LookupRepoWithRefresh(client, cfg.Workspace, iss.RepoOwner+"/"+iss.RepoName)
+		if err != nil {
+			return exitcode.General(fmt.Sprintf("resolving repository for %s#%d", iss.RepoName, iss.Number), err)
+		}
+		removeIssues[i] = api.RESTIssueRef{
+			RepoID:      repo.GhID,
+			IssueNumber: iss.Number,
+		}
+	}
+
+	if err := client.UpdateEpicIssues(epicRepo.GhID, resolved.IssueNumber, nil, removeIssues); err != nil {
+		return exitcode.General("removing issues from legacy epic", err)
+	}
+
+	if output.IsJSON(outputFormat) {
+		return output.JSON(w, map[string]any{
+			"epic":    map[string]any{"id": resolved.ID, "title": resolved.Title, "issue": ref},
+			"removed": formatEpicIssueItemsJSON(issues),
+		})
+	}
+
+	output.MutationSingle(w, output.Green(fmt.Sprintf("Removed all %d issue(s) from legacy epic %q (%s).", len(issues), resolved.Title, ref)))
 
 	return nil
 }

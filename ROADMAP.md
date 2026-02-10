@@ -454,9 +454,9 @@ Build the resolution layer now — almost every subsequent command depends on it
 ## Phase 16: Shell completions & distribution
 
 ### Shell completions
-- [ ] Cobra completion for bash, zsh, fish
-- [ ] Dynamic completions for pipeline names, sprint names, epic names
-- [ ] `zh completion <shell>` command with install instructions
+- [x] Cobra completion for bash, zsh, fish
+- [x] Dynamic completions for pipeline names, sprint names, epic names
+- [x] `zh completion <shell>` command with install instructions
 
 ### Distribution
 - [ ] goreleaser config: binary builds for macOS (arm64, amd64), Linux (arm64, amd64)

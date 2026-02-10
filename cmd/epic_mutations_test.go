@@ -559,6 +559,41 @@ func TestEpicDeleteDryRun(t *testing.T) {
 	}
 }
 
+func TestEpicDeleteDryRunJSON(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	handleEpicResolutionForMutations(ms)
+	ms.HandleQuery("GetEpicChildCount", epicChildCountResponse(3))
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "delete", "Q1 Platform", "--dry-run", "--output=json"})
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic delete --dry-run --output=json returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nOutput: %s", err, buf.String())
+	}
+
+	if result["dryRun"] != true {
+		t.Error("JSON should contain dryRun: true")
+	}
+	if result["deleted"] == nil {
+		t.Error("JSON should contain deleted field")
+	}
+	if result["id"] == nil {
+		t.Error("JSON should contain id field")
+	}
+	if result["childIssues"] != float64(3) {
+		t.Errorf("JSON childIssues should be 3, got: %v", result["childIssues"])
+	}
+}
+
 func TestEpicDeleteJSON(t *testing.T) {
 	ms := testutil.NewMockServer(t)
 	handleEpicResolutionForMutations(ms)

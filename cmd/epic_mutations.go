@@ -935,6 +935,15 @@ func runEpicDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	if epicDeleteDryRun {
+		if output.IsJSON(outputFormat) {
+			return output.JSON(w, map[string]any{
+				"dryRun":      true,
+				"deleted":     resolved.Title,
+				"id":          resolved.ID,
+				"state":       strings.ToLower(state),
+				"childIssues": childCount,
+			})
+		}
 		msg := fmt.Sprintf("Would delete epic %q.", resolved.Title)
 		details := []output.DetailLine{
 			{Key: "ID", Value: resolved.ID},

@@ -68,5 +68,5 @@
 - [x] `zh workspace list`
 - [x] `zh workspace show`
 - [x] `zh workspace switch <workspace>`
-- [ ] `zh workspace repos`
+- [x] `zh workspace repos`
 - [ ] `zh workspace stats`

@@ -1,0 +1,72 @@
+# zh Manual Testing Checklist
+
+## board
+- [x] `zh board`
+- [x] `zh board --pipeline <name>`
+
+## cache
+- [ ] `zh cache clear`
+
+## epic
+- [ ] `zh epic list`
+- [ ] `zh epic show <epic>`
+- [ ] `zh epic create`
+- [ ] `zh epic edit <epic>`
+- [ ] `zh epic delete <epic>`
+- [ ] `zh epic set-state <epic> <state>`
+- [ ] `zh epic set-dates <epic>`
+- [ ] `zh epic estimate <epic>`
+- [ ] `zh epic progress <epic>`
+- [ ] `zh epic add <epic> <issue>...`
+- [ ] `zh epic remove <epic> <issue>...`
+- [ ] `zh epic assignee <epic>`
+- [ ] `zh epic label <epic>`
+- [ ] `zh epic key-date <epic>`
+- [ ] `zh epic alias <name> <epic>`
+
+## issue
+- [ ] `zh issue list`
+- [ ] `zh issue show <issue>`
+- [ ] `zh issue move <issue>... <pipeline>`
+- [ ] `zh issue estimate <issue>`
+- [ ] `zh issue priority <issue>`
+- [ ] `zh issue label <issue>`
+- [ ] `zh issue close <issue>...`
+- [ ] `zh issue reopen <issue>...`
+- [ ] `zh issue connect <pr> <issue>`
+- [ ] `zh issue disconnect <pr> <issue>`
+- [ ] `zh issue block <blocker> <blocked>`
+- [ ] `zh issue blockers <issue>`
+- [ ] `zh issue blocking <issue>`
+- [ ] `zh issue activity <issue>`
+
+## label
+- [ ] `zh label list`
+
+## pipeline
+- [ ] `zh pipeline list`
+- [ ] `zh pipeline show <pipeline>`
+- [ ] `zh pipeline create <name>`
+- [ ] `zh pipeline edit <pipeline>`
+- [ ] `zh pipeline delete <pipeline>`
+- [ ] `zh pipeline automations <pipeline>`
+- [ ] `zh pipeline alias <name> <pipeline>`
+
+## priority
+- [ ] `zh priority list`
+
+## sprint
+- [ ] `zh sprint list`
+- [ ] `zh sprint show <sprint>`
+- [ ] `zh sprint add <sprint> <issue>...`
+- [ ] `zh sprint remove <sprint> <issue>...`
+- [ ] `zh sprint review <sprint>`
+- [ ] `zh sprint scope <sprint>`
+- [ ] `zh sprint velocity`
+
+## workspace
+- [ ] `zh workspace list`
+- [ ] `zh workspace show`
+- [ ] `zh workspace switch <workspace>`
+- [ ] `zh workspace repos`
+- [ ] `zh workspace stats`

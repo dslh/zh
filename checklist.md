@@ -44,7 +44,7 @@
 - [x] `zh label list`
 
 ## pipeline
-- [ ] `zh pipeline list`
+- [x] `zh pipeline list`
 - [ ] `zh pipeline show <pipeline>`
 - [ ] `zh pipeline create <name>`
 - [ ] `zh pipeline edit <pipeline>`

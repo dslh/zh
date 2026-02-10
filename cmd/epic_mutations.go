@@ -1918,6 +1918,22 @@ func runEpicRemoveLegacy(client *api.Client, cfg *config.Config, w writerFlusher
 }
 
 func renderEpicRemoveLegacyDryRun(w writerFlusher, epic *resolve.EpicResult, ref string, issues []resolvedEpicIssue, failed []output.FailedItem) error {
+	if output.IsJSON(outputFormat) {
+		result := map[string]any{
+			"dryRun":  true,
+			"epic":    map[string]any{"id": epic.ID, "title": epic.Title, "issue": ref},
+			"removed": formatEpicIssueItemsJSON(issues),
+		}
+		if len(failed) > 0 {
+			failedItems := make([]map[string]any, len(failed))
+			for i, f := range failed {
+				failedItems[i] = map[string]any{"ref": f.Ref, "reason": f.Reason}
+			}
+			result["failed"] = failedItems
+		}
+		return output.JSON(w, result)
+	}
+
 	if len(issues) > 0 {
 		items := make([]output.MutationItem, len(issues))
 		for i, iss := range issues {
@@ -1964,6 +1980,13 @@ func runEpicRemoveAllLegacy(client *api.Client, cfg *config.Config, w writerFlus
 	}
 
 	if epicRemoveDryRun {
+		if output.IsJSON(outputFormat) {
+			return output.JSON(w, map[string]any{
+				"dryRun":  true,
+				"epic":    map[string]any{"id": resolved.ID, "title": resolved.Title, "issue": ref},
+				"removed": formatEpicIssueItemsJSON(issues),
+			})
+		}
 		items := make([]output.MutationItem, len(issues))
 		for i, iss := range issues {
 			items[i] = output.MutationItem{
@@ -2032,6 +2055,13 @@ func runEpicRemoveAll(client *api.Client, cfg *config.Config, w writerFlusher, r
 	}
 
 	if epicRemoveDryRun {
+		if output.IsJSON(outputFormat) {
+			return output.JSON(w, map[string]any{
+				"dryRun":  true,
+				"epic":    map[string]any{"id": resolved.ID, "title": resolved.Title},
+				"removed": formatEpicIssueItemsJSON(issues),
+			})
+		}
 		items := make([]output.MutationItem, len(issues))
 		for i, iss := range issues {
 			items[i] = output.MutationItem{
@@ -2305,6 +2335,22 @@ func runEpicEstimate(cmd *cobra.Command, args []string) error {
 }
 
 func renderEpicRemoveDryRun(w writerFlusher, epic *resolve.EpicResult, issues []resolvedEpicIssue, failed []output.FailedItem) error {
+	if output.IsJSON(outputFormat) {
+		result := map[string]any{
+			"dryRun":  true,
+			"epic":    map[string]any{"id": epic.ID, "title": epic.Title},
+			"removed": formatEpicIssueItemsJSON(issues),
+		}
+		if len(failed) > 0 {
+			failedItems := make([]map[string]any, len(failed))
+			for i, f := range failed {
+				failedItems[i] = map[string]any{"ref": f.Ref, "reason": f.Reason}
+			}
+			result["failed"] = failedItems
+		}
+		return output.JSON(w, result)
+	}
+
 	if len(issues) > 0 {
 		items := make([]output.MutationItem, len(issues))
 		for i, iss := range issues {

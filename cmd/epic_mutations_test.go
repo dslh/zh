@@ -1649,6 +1649,72 @@ func TestEpicRemoveAllDryRun(t *testing.T) {
 	}
 }
 
+func TestEpicRemoveDryRunJSON(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	handleEpicResolutionForMutations(ms)
+	ms.HandleQuery("ListRepos", repoListForEpicResponse())
+	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
+	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "remove", "Q1 Platform", "task-tracker#1", "--dry-run", "--output=json"})
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic remove --dry-run --output=json returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nOutput: %s", err, buf.String())
+	}
+
+	if result["dryRun"] != true {
+		t.Error("JSON should contain dryRun: true")
+	}
+	if result["epic"] == nil {
+		t.Error("JSON should contain epic field")
+	}
+	if result["removed"] == nil {
+		t.Error("JSON should contain removed field")
+	}
+}
+
+func TestEpicRemoveAllDryRunJSON(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	handleEpicResolutionForMutations(ms)
+	ms.HandleQuery("GetEpicChildIssueIDs", epicChildIssueIDsResponse())
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "remove", "Q1 Platform", "--all", "--dry-run", "--output=json"})
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic remove --all --dry-run --output=json returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nOutput: %s", err, buf.String())
+	}
+
+	if result["dryRun"] != true {
+		t.Error("JSON should contain dryRun: true")
+	}
+	if result["epic"] == nil {
+		t.Error("JSON should contain epic field")
+	}
+	if result["removed"] == nil {
+		t.Error("JSON should contain removed field")
+	}
+}
+
 func TestEpicRemoveJSON(t *testing.T) {
 	ms := testutil.NewMockServer(t)
 	handleEpicResolutionForMutations(ms)
@@ -1735,6 +1801,45 @@ func TestEpicRemoveLegacyDryRun(t *testing.T) {
 	}
 	if !strings.Contains(out, "legacy epic") {
 		t.Errorf("dry-run should mention legacy epic, got: %s", out)
+	}
+}
+
+func TestEpicRemoveLegacyDryRunJSON(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListRepos", repoListForEpicResponse())
+	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
+	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
+	setupEpicMutationTest(t, ms)
+
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "remove", "Bug Tracker", "task-tracker#1", "--dry-run", "--output=json"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic remove legacy --dry-run --output=json returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nOutput: %s", err, buf.String())
+	}
+
+	if result["dryRun"] != true {
+		t.Error("JSON should contain dryRun: true")
+	}
+	epic := result["epic"].(map[string]any)
+	if epic["issue"] == nil {
+		t.Error("JSON epic should contain issue ref for legacy epic")
+	}
+	if result["removed"] == nil {
+		t.Error("JSON should contain removed field")
 	}
 }
 
@@ -1825,6 +1930,43 @@ func TestEpicRemoveAllLegacyDryRun(t *testing.T) {
 	}
 	if !strings.Contains(out, "legacy epic") {
 		t.Errorf("dry-run should mention legacy epic, got: %s", out)
+	}
+}
+
+func TestEpicRemoveAllLegacyDryRunJSON(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("GetEpicChildIssueIDs", epicChildIssueIDsResponse())
+	setupEpicMutationTest(t, ms)
+
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "remove", "Bug Tracker", "--all", "--dry-run", "--output=json"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic remove --all --dry-run --output=json legacy returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nOutput: %s", err, buf.String())
+	}
+
+	if result["dryRun"] != true {
+		t.Error("JSON should contain dryRun: true")
+	}
+	epic := result["epic"].(map[string]any)
+	if epic["issue"] == nil {
+		t.Error("JSON epic should contain issue ref for legacy epic")
+	}
+	if result["removed"] == nil {
+		t.Error("JSON should contain removed field")
 	}
 }
 

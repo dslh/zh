@@ -60,7 +60,7 @@
 - [x] `zh sprint show <sprint>`
 - [x] `zh sprint add <sprint> <issue>...`
 - [x] `zh sprint remove <sprint> <issue>...`
-- [ ] `zh sprint review <sprint>`
+- [x] `zh sprint review <sprint>`
 - [ ] `zh sprint scope <sprint>`
 - [ ] `zh sprint velocity`
 

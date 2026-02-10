@@ -223,28 +223,28 @@ Build the resolution layer now — almost every subsequent command depends on it
 ## Phase 9: Issue commands (connections & dependencies)
 
 ### `zh issue connect <issue> <pr>`
-- [ ] Resolve both issue and PR identifiers
-- [ ] `--dry-run` support
-- [ ] Tests: connect, already connected
+- [x] Resolve both issue and PR identifiers
+- [x] `--dry-run` support
+- [x] Tests: connect, already connected
 
 ### `zh issue disconnect <issue> <pr>`
-- [ ] Resolve both identifiers
-- [ ] `--dry-run` support
-- [ ] Tests: disconnect, not connected
+- [x] Resolve both identifiers
+- [x] `--dry-run` support
+- [x] Tests: disconnect, not connected
 
 ### `zh issue block <blocker> <blocked>`
-- [ ] `--type=issue|epic` for either side
-- [ ] `--dry-run` support
-- [ ] Note: blocks cannot be removed via API (display warning)
-- [ ] Tests: issue blocks issue, epic blocks issue, dry run
+- [x] `--type=issue|epic` for either side
+- [x] `--dry-run` support
+- [x] Note: blocks cannot be removed via API (display warning)
+- [x] Tests: issue blocks issue, epic blocks issue, dry run
 
 ### `zh issue blockers <issue>`
-- [ ] List issues and epics blocking this issue
-- [ ] Tests: with blockers, no blockers
+- [x] List issues and epics blocking this issue
+- [x] Tests: with blockers, no blockers
 
 ### `zh issue blocking <issue>`
-- [ ] List issues and epics this issue is blocking
-- [ ] Tests: blocking something, blocking nothing
+- [x] List issues and epics this issue is blocking
+- [x] Tests: blocking something, blocking nothing
 
 ## Phase 10: Issue commands (metadata)
 

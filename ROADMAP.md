@@ -309,21 +309,24 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] Tests: each state transition, apply-to-issues
 
 ### `zh epic set-dates <epic>`
-- [ ] `--start=<date>`, `--end=<date>` flags
-- [ ] `--dry-run` support
-- [ ] Tests: set both, set one, clear
+- [x] `--start=<date>`, `--end=<date>` flags
+- [x] `--clear-start`, `--clear-end` flags
+- [x] Support for both ZenHub and legacy epics
+- [x] `--dry-run` support
+- [x] Tests: set both, set one, clear, invalid date, conflicting flags, legacy epic, dry-run, JSON
 
 ### `zh epic add <epic> <issue>...`
-- [ ] Resolve epic and issue(s)
-- [ ] `--dry-run` support
-- [ ] `--continue-on-error` for batch operations
-- [ ] Tests: add single, add multiple, issue already in epic, continue-on-error with partial failure
+- [x] Resolve epic and issue(s)
+- [x] `--dry-run` support
+- [x] `--continue-on-error` for batch operations
+- [x] Tests: add single, add multiple, dry-run, JSON, legacy error, continue-on-error
 
 ### `zh epic remove <epic> <issue>...`
-- [ ] Resolve epic and issue(s)
-- [ ] `--dry-run` support
-- [ ] `--continue-on-error` for batch operations
-- [ ] Tests: remove, issue not in epic, continue-on-error with partial failure
+- [x] Resolve epic and issue(s)
+- [x] `--all` flag to remove all child issues
+- [x] `--dry-run` support
+- [x] `--continue-on-error` for batch operations
+- [x] Tests: remove, remove all, remove all empty, dry-run, remove all dry-run, JSON, legacy error, no issues error
 
 ### `zh epic alias <epic> <alias>`
 - [x] Write alias to config

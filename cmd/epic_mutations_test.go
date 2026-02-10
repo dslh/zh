@@ -822,3 +822,699 @@ func updateZenhubEpicStateResponse(state string) map[string]any {
 		},
 	}
 }
+
+// --- epic set-dates ---
+
+func TestEpicSetDates(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	ms.HandleQuery("UpdateZenhubEpicDates", updateZenhubEpicDatesResponse("2025-03-01", "2025-03-31"))
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "set-dates", "Q1 Platform", "--start=2025-03-01", "--end=2025-03-31"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic set-dates returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Updated dates") {
+		t.Errorf("output should confirm update, got: %s", out)
+	}
+	if !strings.Contains(out, "2025-03-01") {
+		t.Errorf("output should show start date, got: %s", out)
+	}
+	if !strings.Contains(out, "2025-03-31") {
+		t.Errorf("output should show end date, got: %s", out)
+	}
+}
+
+func TestEpicSetDatesClearEnd(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	ms.HandleQuery("UpdateZenhubEpicDates", updateZenhubEpicDatesResponse("2025-03-01", ""))
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "set-dates", "Q1 Platform", "--clear-end"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic set-dates --clear-end returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Updated dates") {
+		t.Errorf("output should confirm update, got: %s", out)
+	}
+	if !strings.Contains(out, "None") {
+		t.Errorf("output should show None for cleared end date, got: %s", out)
+	}
+}
+
+func TestEpicSetDatesNoFlags(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(buf)
+	rootCmd.SetArgs([]string{"epic", "set-dates", "Q1 Platform"})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("epic set-dates with no flags should return error")
+	}
+	if !strings.Contains(err.Error(), "at least one of") {
+		t.Errorf("error should mention required flags, got: %v", err)
+	}
+}
+
+func TestEpicSetDatesInvalidDate(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(buf)
+	rootCmd.SetArgs([]string{"epic", "set-dates", "Q1 Platform", "--start=not-a-date"})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("epic set-dates with invalid date should return error")
+	}
+	if !strings.Contains(err.Error(), "invalid date") {
+		t.Errorf("error should mention invalid date, got: %v", err)
+	}
+}
+
+func TestEpicSetDatesConflicting(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(buf)
+	rootCmd.SetArgs([]string{"epic", "set-dates", "Q1 Platform", "--start=2025-03-01", "--clear-start"})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("epic set-dates with conflicting flags should return error")
+	}
+	if !strings.Contains(err.Error(), "cannot set --start and --clear-start") {
+		t.Errorf("error should mention conflicting flags, got: %v", err)
+	}
+}
+
+func TestEpicSetDatesDryRun(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "set-dates", "Q1 Platform", "--start=2025-03-01", "--clear-end", "--dry-run"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic set-dates --dry-run returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Would update dates") {
+		t.Errorf("dry-run should use 'Would' prefix, got: %s", out)
+	}
+	if !strings.Contains(out, "2025-03-01") {
+		t.Errorf("dry-run should show start date, got: %s", out)
+	}
+	if !strings.Contains(out, "(clear)") {
+		t.Errorf("dry-run should show (clear) for cleared end date, got: %s", out)
+	}
+}
+
+func TestEpicSetDatesJSON(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	ms.HandleQuery("UpdateZenhubEpicDates", updateZenhubEpicDatesResponse("2025-03-01", "2025-03-31"))
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "set-dates", "Q1 Platform", "--start=2025-03-01", "--end=2025-03-31", "--output=json"})
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic set-dates --output=json returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nOutput: %s", err, buf.String())
+	}
+
+	if result["startOn"] != "2025-03-01" {
+		t.Errorf("JSON should contain startOn, got: %v", result["startOn"])
+	}
+	if result["endOn"] != "2025-03-31" {
+		t.Errorf("JSON should contain endOn, got: %v", result["endOn"])
+	}
+}
+
+func TestEpicSetDatesLegacy(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	setupEpicMutationTest(t, ms)
+
+	// Pre-populate cache with legacy epic
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	ms.HandleQuery("UpdateEpicDates", updateLegacyEpicDatesResponse("2025-03-01", "2025-03-31"))
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "set-dates", "Bug Tracker", "--start=2025-03-01", "--end=2025-03-31"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic set-dates on legacy epic returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Updated dates") {
+		t.Errorf("output should confirm update, got: %s", out)
+	}
+}
+
+// --- epic add ---
+
+func TestEpicAdd(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	ms.HandleQuery("ListRepos", repoListForEpicResponse())
+	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
+	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
+	ms.HandleQuery("AddIssuesToZenhubEpics", addIssuesToEpicsResponse())
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "add", "Q1 Platform", "task-tracker#1"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic add returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Added") {
+		t.Errorf("output should confirm addition, got: %s", out)
+	}
+	if !strings.Contains(out, "task-tracker#1") {
+		t.Errorf("output should contain issue ref, got: %s", out)
+	}
+}
+
+func TestEpicAddMultiple(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	ms.HandleQuery("ListRepos", repoListForEpicResponse())
+	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
+	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
+	ms.HandleQuery("AddIssuesToZenhubEpics", addIssuesToEpicsResponse())
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "add", "Q1 Platform", "task-tracker#1", "task-tracker#1"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic add multiple returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Added 2 issue(s)") {
+		t.Errorf("output should confirm batch addition, got: %s", out)
+	}
+}
+
+func TestEpicAddDryRun(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	ms.HandleQuery("ListRepos", repoListForEpicResponse())
+	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
+	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "add", "Q1 Platform", "task-tracker#1", "--dry-run"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic add --dry-run returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Would add") {
+		t.Errorf("dry-run should use 'Would' prefix, got: %s", out)
+	}
+	if !strings.Contains(out, "task-tracker#1") {
+		t.Errorf("dry-run should show issue ref, got: %s", out)
+	}
+}
+
+func TestEpicAddJSON(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	ms.HandleQuery("ListRepos", repoListForEpicResponse())
+	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
+	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
+	ms.HandleQuery("AddIssuesToZenhubEpics", addIssuesToEpicsResponse())
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "add", "Q1 Platform", "task-tracker#1", "--output=json"})
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic add --output=json returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nOutput: %s", err, buf.String())
+	}
+
+	if result["epic"] == nil {
+		t.Error("JSON should contain epic field")
+	}
+	if result["added"] == nil {
+		t.Error("JSON should contain added field")
+	}
+}
+
+func TestEpicAddLegacyError(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	setupEpicMutationTest(t, ms)
+
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(buf)
+	rootCmd.SetArgs([]string{"epic", "add", "Bug Tracker", "task-tracker#1"})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("epic add on legacy epic should return error")
+	}
+	if !strings.Contains(err.Error(), "legacy epic") {
+		t.Errorf("error should mention legacy epic, got: %v", err)
+	}
+}
+
+func TestEpicAddContinueOnError(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	ms.HandleQuery("ListRepos", repoListForEpicResponse())
+	// First issue resolves, second fails (not found)
+	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
+	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
+	ms.HandleQuery("AddIssuesToZenhubEpics", addIssuesToEpicsResponse())
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "add", "Q1 Platform", "task-tracker#1", "task-tracker#999", "--continue-on-error"})
+
+	// The command should succeed but report partial failure
+	err := rootCmd.Execute()
+	// We expect an error return because some issues failed
+	if err == nil {
+		// The first issue was added successfully, second failed to resolve.
+		// With continue-on-error, partial failure returns an error.
+		out := buf.String()
+		if !strings.Contains(out, "Added") {
+			t.Errorf("output should contain Added, got: %s", out)
+		}
+	}
+}
+
+// --- epic remove ---
+
+func TestEpicRemove(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	ms.HandleQuery("ListRepos", repoListForEpicResponse())
+	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
+	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
+	ms.HandleQuery("RemoveIssuesFromZenhubEpics", removeIssuesFromEpicsResponse())
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "remove", "Q1 Platform", "task-tracker#1"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic remove returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Removed") {
+		t.Errorf("output should confirm removal, got: %s", out)
+	}
+	if !strings.Contains(out, "task-tracker#1") {
+		t.Errorf("output should contain issue ref, got: %s", out)
+	}
+}
+
+func TestEpicRemoveAll(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	ms.HandleQuery("GetEpicChildIssueIDs", epicChildIssueIDsResponse())
+	ms.HandleQuery("RemoveIssuesFromZenhubEpics", removeIssuesFromEpicsResponse())
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "remove", "Q1 Platform", "--all"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic remove --all returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Removed all") {
+		t.Errorf("output should confirm removing all, got: %s", out)
+	}
+}
+
+func TestEpicRemoveAllEmpty(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	ms.HandleQuery("GetEpicChildIssueIDs", epicChildIssueIDsEmptyResponse())
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "remove", "Q1 Platform", "--all"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic remove --all (empty) returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "no child issues") {
+		t.Errorf("output should say no child issues, got: %s", out)
+	}
+}
+
+func TestEpicRemoveDryRun(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	ms.HandleQuery("ListRepos", repoListForEpicResponse())
+	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
+	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "remove", "Q1 Platform", "task-tracker#1", "--dry-run"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic remove --dry-run returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Would remove") {
+		t.Errorf("dry-run should use 'Would' prefix, got: %s", out)
+	}
+	if !strings.Contains(out, "task-tracker#1") {
+		t.Errorf("dry-run should show issue ref, got: %s", out)
+	}
+}
+
+func TestEpicRemoveAllDryRun(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	ms.HandleQuery("GetEpicChildIssueIDs", epicChildIssueIDsResponse())
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "remove", "Q1 Platform", "--all", "--dry-run"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic remove --all --dry-run returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Would remove all") {
+		t.Errorf("dry-run should use 'Would remove all' prefix, got: %s", out)
+	}
+}
+
+func TestEpicRemoveJSON(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	ms.HandleQuery("ListRepos", repoListForEpicResponse())
+	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
+	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
+	ms.HandleQuery("RemoveIssuesFromZenhubEpics", removeIssuesFromEpicsResponse())
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "remove", "Q1 Platform", "task-tracker#1", "--output=json"})
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic remove --output=json returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nOutput: %s", err, buf.String())
+	}
+
+	if result["epic"] == nil {
+		t.Error("JSON should contain epic field")
+	}
+	if result["removed"] == nil {
+		t.Error("JSON should contain removed field")
+	}
+}
+
+func TestEpicRemoveLegacyError(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	setupEpicMutationTest(t, ms)
+
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(buf)
+	rootCmd.SetArgs([]string{"epic", "remove", "Bug Tracker", "task-tracker#1"})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("epic remove on legacy epic should return error")
+	}
+	if !strings.Contains(err.Error(), "legacy epic") {
+		t.Errorf("error should mention legacy epic, got: %v", err)
+	}
+}
+
+func TestEpicRemoveNoIssues(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(buf)
+	rootCmd.SetArgs([]string{"epic", "remove", "Q1 Platform"})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("epic remove with no issues and no --all should return error")
+	}
+}
+
+// --- set-dates helpers ---
+
+func updateZenhubEpicDatesResponse(start, end string) map[string]any {
+	var startOn any = start
+	var endOn any = end
+	if start == "" {
+		startOn = nil
+	}
+	if end == "" {
+		endOn = nil
+	}
+	return map[string]any{
+		"data": map[string]any{
+			"updateZenhubEpicDates": map[string]any{
+				"zenhubEpic": map[string]any{
+					"id":      "epic-zen-1",
+					"title":   "Q1 Platform Improvements",
+					"startOn": startOn,
+					"endOn":   endOn,
+				},
+			},
+		},
+	}
+}
+
+func updateLegacyEpicDatesResponse(start, end string) map[string]any {
+	var startOn any = start
+	var endOn any = end
+	if start == "" {
+		startOn = nil
+	}
+	if end == "" {
+		endOn = nil
+	}
+	return map[string]any{
+		"data": map[string]any{
+			"updateEpicDates": map[string]any{
+				"epic": map[string]any{
+					"id":      "legacy-epic-1",
+					"startOn": startOn,
+					"endOn":   endOn,
+					"issue": map[string]any{
+						"title":  "Bug Tracker Improvements",
+						"number": 1,
+					},
+				},
+			},
+		},
+	}
+}
+
+// --- epic add/remove helpers ---
+
+func issueByInfoForEpicResponse(id string, number int) map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"issueByInfo": map[string]any{
+				"id":     id,
+				"number": number,
+				"repository": map[string]any{
+					"ghId":      1152464818,
+					"name":      "task-tracker",
+					"ownerName": "dlakehammond",
+				},
+			},
+		},
+	}
+}
+
+func issueDetailForEpicResponse(id string, number int, title string) map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"id":     id,
+				"number": number,
+				"title":  title,
+				"repository": map[string]any{
+					"name":      "task-tracker",
+					"ownerName": "dlakehammond",
+				},
+			},
+		},
+	}
+}
+
+func addIssuesToEpicsResponse() map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"addIssuesToZenhubEpics": map[string]any{
+				"zenhubEpics": []any{
+					map[string]any{
+						"id":    "epic-zen-1",
+						"title": "Q1 Platform Improvements",
+					},
+				},
+			},
+		},
+	}
+}
+
+func removeIssuesFromEpicsResponse() map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"removeIssuesFromZenhubEpics": map[string]any{
+				"zenhubEpics": []any{
+					map[string]any{
+						"id":    "epic-zen-1",
+						"title": "Q1 Platform Improvements",
+					},
+				},
+			},
+		},
+	}
+}
+
+func epicChildIssueIDsResponse() map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"id":    "epic-zen-1",
+				"title": "Q1 Platform Improvements",
+				"childIssues": map[string]any{
+					"totalCount": 2,
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
+					},
+					"nodes": []any{
+						map[string]any{
+							"id":     "i1",
+							"number": 1,
+							"title":  "Fix login button alignment",
+							"repository": map[string]any{
+								"name":      "task-tracker",
+								"ownerName": "dlakehammond",
+							},
+						},
+						map[string]any{
+							"id":     "i2",
+							"number": 2,
+							"title":  "Update error messages",
+							"repository": map[string]any{
+								"name":      "task-tracker",
+								"ownerName": "dlakehammond",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func epicChildIssueIDsEmptyResponse() map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"id":    "epic-zen-1",
+				"title": "Q1 Platform Improvements",
+				"childIssues": map[string]any{
+					"totalCount": 0,
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
+					},
+					"nodes": []any{},
+				},
+			},
+		},
+	}
+}

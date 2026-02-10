@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/dslh/zh/internal/api"
 	"github.com/dslh/zh/internal/cache"
 	"github.com/dslh/zh/internal/config"
 	"github.com/dslh/zh/internal/exitcode"
+	"github.com/dslh/zh/internal/gh"
 	"github.com/dslh/zh/internal/output"
 	"github.com/dslh/zh/internal/resolve"
 	"github.com/spf13/cobra"
@@ -96,6 +98,74 @@ const createLegacyEpicMutation = `mutation CreateEpic($input: CreateEpicInput!) 
   }
 }`
 
+const updateZenhubEpicDatesMutation = `mutation UpdateZenhubEpicDates($input: UpdateZenhubEpicDatesInput!) {
+  updateZenhubEpicDates(input: $input) {
+    zenhubEpic {
+      id
+      title
+      startOn
+      endOn
+    }
+  }
+}`
+
+const updateLegacyEpicDatesMutation = `mutation UpdateEpicDates($input: UpdateEpicDatesInput!) {
+  updateEpicDates(input: $input) {
+    epic {
+      id
+      startOn
+      endOn
+      issue {
+        title
+        number
+      }
+    }
+  }
+}`
+
+const addIssuesToZenhubEpicsMutation = `mutation AddIssuesToZenhubEpics($input: AddIssuesToZenhubEpicsInput!) {
+  addIssuesToZenhubEpics(input: $input) {
+    zenhubEpics {
+      id
+      title
+    }
+  }
+}`
+
+const removeIssuesFromZenhubEpicsMutation = `mutation RemoveIssuesFromZenhubEpics($input: RemoveIssuesFromZenhubEpicsInput!) {
+  removeIssuesFromZenhubEpics(input: $input) {
+    zenhubEpics {
+      id
+      title
+    }
+  }
+}`
+
+const epicChildIssueIDsQuery = `query GetEpicChildIssueIDs($id: ID!, $workspaceId: ID!, $first: Int!, $after: String) {
+  node(id: $id) {
+    ... on ZenhubEpic {
+      id
+      title
+      childIssues(workspaceId: $workspaceId, first: $first, after: $after) {
+        totalCount
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          id
+          number
+          title
+          repository {
+            name
+            ownerName
+          }
+        }
+      }
+    }
+  }
+}`
+
 // Commands
 
 var epicCreateCmd = &cobra.Command{
@@ -152,6 +222,52 @@ epic aliases.`,
 	RunE: runEpicAlias,
 }
 
+var epicSetDatesCmd = &cobra.Command{
+	Use:   "set-dates <epic>",
+	Short: "Set start and/or end dates on an epic",
+	Long: `Set start and/or end dates on an epic.
+
+At least one of --start, --end, --clear-start, or --clear-end must be provided.
+Dates use YYYY-MM-DD format.
+
+Examples:
+  zh epic set-dates "Q1 Roadmap" --start=2025-03-01 --end=2025-03-31
+  zh epic set-dates "Q1 Roadmap" --clear-end
+  zh epic set-dates "Q1 Roadmap" --start=2025-04-01 --clear-end`,
+	Args: cobra.ExactArgs(1),
+	RunE: runEpicSetDates,
+}
+
+var epicAddCmd = &cobra.Command{
+	Use:   "add <epic> <issue>...",
+	Short: "Add issues to an epic",
+	Long: `Add one or more issues to a ZenHub epic.
+
+Issues can be specified as repo#number, owner/repo#number, ZenHub IDs,
+or bare numbers with --repo.
+
+Examples:
+  zh epic add "Q1 Roadmap" task-tracker#1 task-tracker#2
+  zh epic add "Q1 Roadmap" --repo=task-tracker 1 2 3`,
+	Args: cobra.MinimumNArgs(2),
+	RunE: runEpicAdd,
+}
+
+var epicRemoveCmd = &cobra.Command{
+	Use:   "remove <epic> <issue>...",
+	Short: "Remove issues from an epic",
+	Long: `Remove one or more issues from a ZenHub epic.
+
+Issues can be specified as repo#number, owner/repo#number, ZenHub IDs,
+or bare numbers with --repo. Use --all to remove all issues.
+
+Examples:
+  zh epic remove "Q1 Roadmap" task-tracker#1 task-tracker#2
+  zh epic remove "Q1 Roadmap" --all`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: runEpicRemove,
+}
+
 // Flag variables
 
 var (
@@ -170,6 +286,21 @@ var (
 
 	epicAliasDelete bool
 	epicAliasList   bool
+
+	epicSetDatesStart      string
+	epicSetDatesEnd        string
+	epicSetDatesClearStart bool
+	epicSetDatesClearEnd   bool
+	epicSetDatesDryRun     bool
+
+	epicAddDryRun          bool
+	epicAddRepo            string
+	epicAddContinueOnError bool
+
+	epicRemoveDryRun          bool
+	epicRemoveRepo            string
+	epicRemoveAll             bool
+	epicRemoveContinueOnError bool
 )
 
 func init() {
@@ -189,11 +320,29 @@ func init() {
 	epicAliasCmd.Flags().BoolVar(&epicAliasDelete, "delete", false, "Remove an existing alias")
 	epicAliasCmd.Flags().BoolVar(&epicAliasList, "list", false, "List all epic aliases")
 
+	epicSetDatesCmd.Flags().StringVar(&epicSetDatesStart, "start", "", "Start date (YYYY-MM-DD)")
+	epicSetDatesCmd.Flags().StringVar(&epicSetDatesEnd, "end", "", "End date (YYYY-MM-DD)")
+	epicSetDatesCmd.Flags().BoolVar(&epicSetDatesClearStart, "clear-start", false, "Clear the start date")
+	epicSetDatesCmd.Flags().BoolVar(&epicSetDatesClearEnd, "clear-end", false, "Clear the end date")
+	epicSetDatesCmd.Flags().BoolVar(&epicSetDatesDryRun, "dry-run", false, "Show what would be changed without executing")
+
+	epicAddCmd.Flags().BoolVar(&epicAddDryRun, "dry-run", false, "Show what would be added without executing")
+	epicAddCmd.Flags().StringVar(&epicAddRepo, "repo", "", "Repository context for bare issue numbers")
+	epicAddCmd.Flags().BoolVar(&epicAddContinueOnError, "continue-on-error", false, "Continue processing remaining issues after a resolution error")
+
+	epicRemoveCmd.Flags().BoolVar(&epicRemoveDryRun, "dry-run", false, "Show what would be removed without executing")
+	epicRemoveCmd.Flags().StringVar(&epicRemoveRepo, "repo", "", "Repository context for bare issue numbers")
+	epicRemoveCmd.Flags().BoolVar(&epicRemoveAll, "all", false, "Remove all issues from the epic")
+	epicRemoveCmd.Flags().BoolVar(&epicRemoveContinueOnError, "continue-on-error", false, "Continue processing remaining issues after a resolution error")
+
 	epicCmd.AddCommand(epicCreateCmd)
 	epicCmd.AddCommand(epicEditCmd)
 	epicCmd.AddCommand(epicDeleteCmd)
 	epicCmd.AddCommand(epicSetStateCmd)
 	epicCmd.AddCommand(epicAliasCmd)
+	epicCmd.AddCommand(epicSetDatesCmd)
+	epicCmd.AddCommand(epicAddCmd)
+	epicCmd.AddCommand(epicRemoveCmd)
 }
 
 func resetEpicMutationFlags() {
@@ -212,6 +361,21 @@ func resetEpicMutationFlags() {
 
 	epicAliasDelete = false
 	epicAliasList = false
+
+	epicSetDatesStart = ""
+	epicSetDatesEnd = ""
+	epicSetDatesClearStart = false
+	epicSetDatesClearEnd = false
+	epicSetDatesDryRun = false
+
+	epicAddDryRun = false
+	epicAddRepo = ""
+	epicAddContinueOnError = false
+
+	epicRemoveDryRun = false
+	epicRemoveRepo = ""
+	epicRemoveAll = false
+	epicRemoveContinueOnError = false
 }
 
 // fetchWorkspaceOrgID retrieves the ZenHub organization ID for a workspace.
@@ -793,4 +957,706 @@ func runEpicAlias(cmd *cobra.Command, args []string) error {
 
 	output.MutationSingle(w, fmt.Sprintf("Alias %q -> %q.", alias, resolved.Title))
 	return nil
+}
+
+// parseDate validates a date string is in YYYY-MM-DD format.
+func parseDate(s string) (string, error) {
+	_, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return "", exitcode.Usage(fmt.Sprintf("invalid date %q — expected YYYY-MM-DD format", s))
+	}
+	return s, nil
+}
+
+// runEpicSetDates implements `zh epic set-dates <epic>`.
+func runEpicSetDates(cmd *cobra.Command, args []string) error {
+	if epicSetDatesStart == "" && epicSetDatesEnd == "" && !epicSetDatesClearStart && !epicSetDatesClearEnd {
+		return exitcode.Usage("at least one of --start, --end, --clear-start, or --clear-end must be provided")
+	}
+
+	if epicSetDatesStart != "" && epicSetDatesClearStart {
+		return exitcode.Usage("cannot set --start and --clear-start at the same time")
+	}
+	if epicSetDatesEnd != "" && epicSetDatesClearEnd {
+		return exitcode.Usage("cannot set --end and --clear-end at the same time")
+	}
+
+	// Validate dates
+	if epicSetDatesStart != "" {
+		if _, err := parseDate(epicSetDatesStart); err != nil {
+			return err
+		}
+	}
+	if epicSetDatesEnd != "" {
+		if _, err := parseDate(epicSetDatesEnd); err != nil {
+			return err
+		}
+	}
+
+	cfg, err := requireWorkspace()
+	if err != nil {
+		return err
+	}
+
+	client := newClient(cfg, cmd)
+	w := cmd.OutOrStdout()
+
+	// Resolve the epic
+	resolved, err := resolve.Epic(client, cfg.Workspace, args[0], cfg.Aliases.Epics)
+	if err != nil {
+		return err
+	}
+
+	// Build input
+	var startOn any
+	var endOn any
+	if epicSetDatesStart != "" {
+		startOn = epicSetDatesStart
+	} else if epicSetDatesClearStart {
+		startOn = nil
+	}
+	if epicSetDatesEnd != "" {
+		endOn = epicSetDatesEnd
+	} else if epicSetDatesClearEnd {
+		endOn = nil
+	}
+
+	if epicSetDatesDryRun {
+		msg := fmt.Sprintf("Would update dates on epic %q.", resolved.Title)
+		output.MutationSingle(w, output.Yellow(msg))
+		fmt.Fprintln(w)
+		if epicSetDatesStart != "" {
+			fmt.Fprintln(w, output.Yellow(fmt.Sprintf("  Start: %s", epicSetDatesStart)))
+		} else if epicSetDatesClearStart {
+			fmt.Fprintln(w, output.Yellow("  Start: (clear)"))
+		}
+		if epicSetDatesEnd != "" {
+			fmt.Fprintln(w, output.Yellow(fmt.Sprintf("  End:   %s", epicSetDatesEnd)))
+		} else if epicSetDatesClearEnd {
+			fmt.Fprintln(w, output.Yellow("  End:   (clear)"))
+		}
+		return nil
+	}
+
+	if resolved.Type == "zenhub" {
+		return runEpicSetDatesZenhub(client, cfg, w, resolved, startOn, endOn)
+	}
+	return runEpicSetDatesLegacy(client, w, resolved, startOn, endOn)
+}
+
+// runEpicSetDatesZenhub sets dates on a ZenHub epic.
+func runEpicSetDatesZenhub(client *api.Client, cfg *config.Config, w writerFlusher, resolved *resolve.EpicResult, startOn, endOn any) error {
+	input := map[string]any{
+		"zenhubEpicId": resolved.ID,
+	}
+	if epicSetDatesStart != "" || epicSetDatesClearStart {
+		input["startOn"] = startOn
+	}
+	if epicSetDatesEnd != "" || epicSetDatesClearEnd {
+		input["endOn"] = endOn
+	}
+
+	data, err := client.Execute(updateZenhubEpicDatesMutation, map[string]any{
+		"input": input,
+	})
+	if err != nil {
+		return exitcode.General("updating epic dates", err)
+	}
+
+	var resp struct {
+		UpdateZenhubEpicDates struct {
+			ZenhubEpic struct {
+				ID      string  `json:"id"`
+				Title   string  `json:"title"`
+				StartOn *string `json:"startOn"`
+				EndOn   *string `json:"endOn"`
+			} `json:"zenhubEpic"`
+		} `json:"updateZenhubEpicDates"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return exitcode.General("parsing update dates response", err)
+	}
+
+	updated := resp.UpdateZenhubEpicDates.ZenhubEpic
+
+	if output.IsJSON(outputFormat) {
+		return output.JSON(w, updated)
+	}
+
+	output.MutationSingle(w, output.Green(fmt.Sprintf("Updated dates on epic %q.", updated.Title)))
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "  Start: %s\n", formatDatePointer(updated.StartOn))
+	fmt.Fprintf(w, "  End:   %s\n", formatDatePointer(updated.EndOn))
+
+	return nil
+}
+
+// runEpicSetDatesLegacy sets dates on a legacy epic.
+func runEpicSetDatesLegacy(client *api.Client, w writerFlusher, resolved *resolve.EpicResult, startOn, endOn any) error {
+	input := map[string]any{
+		"epicId": resolved.ID,
+	}
+	if epicSetDatesStart != "" || epicSetDatesClearStart {
+		input["startOn"] = startOn
+	}
+	if epicSetDatesEnd != "" || epicSetDatesClearEnd {
+		input["endOn"] = endOn
+	}
+
+	data, err := client.Execute(updateLegacyEpicDatesMutation, map[string]any{
+		"input": input,
+	})
+	if err != nil {
+		return exitcode.General("updating epic dates", err)
+	}
+
+	var resp struct {
+		UpdateEpicDates struct {
+			Epic struct {
+				ID      string  `json:"id"`
+				StartOn *string `json:"startOn"`
+				EndOn   *string `json:"endOn"`
+				Issue   struct {
+					Title  string `json:"title"`
+					Number int    `json:"number"`
+				} `json:"issue"`
+			} `json:"epic"`
+		} `json:"updateEpicDates"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return exitcode.General("parsing update dates response", err)
+	}
+
+	updated := resp.UpdateEpicDates.Epic
+
+	if output.IsJSON(outputFormat) {
+		return output.JSON(w, updated)
+	}
+
+	output.MutationSingle(w, output.Green(fmt.Sprintf("Updated dates on epic %q.", resolved.Title)))
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "  Start: %s\n", formatDatePointer(updated.StartOn))
+	fmt.Fprintf(w, "  End:   %s\n", formatDatePointer(updated.EndOn))
+
+	return nil
+}
+
+// formatDatePointer returns a date string or "None" for nil.
+func formatDatePointer(d *string) string {
+	if d == nil || *d == "" {
+		return "None"
+	}
+	return *d
+}
+
+// resolvedEpicIssue holds minimal info about an issue resolved for epic add/remove.
+type resolvedEpicIssue struct {
+	ID        string
+	Number    int
+	RepoName  string
+	RepoOwner string
+	Title     string
+}
+
+func (r *resolvedEpicIssue) Ref() string {
+	return fmt.Sprintf("%s#%d", r.RepoName, r.Number)
+}
+
+// issueResolveForEpicQuery fetches title and repo info for an issue by ID.
+const issueResolveForEpicQuery = `query GetIssueForEpic($issueId: ID!) {
+  node(id: $issueId) {
+    ... on Issue {
+      id
+      number
+      title
+      repository {
+        name
+        ownerName
+      }
+    }
+  }
+}`
+
+// resolveIssueForEpic resolves an issue identifier and fetches its title.
+func resolveIssueForEpic(client *api.Client, workspaceID, identifier, repoFlag string, ghClient *gh.Client) (*resolvedEpicIssue, error) {
+	result, err := resolve.Issue(client, workspaceID, identifier, &resolve.IssueOptions{
+		RepoFlag:     repoFlag,
+		GitHubClient: ghClient,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Fetch title
+	data, err := client.Execute(issueResolveForEpicQuery, map[string]any{
+		"issueId": result.ID,
+	})
+	if err != nil {
+		return nil, exitcode.General("fetching issue details", err)
+	}
+
+	var resp struct {
+		Node *struct {
+			ID         string `json:"id"`
+			Number     int    `json:"number"`
+			Title      string `json:"title"`
+			Repository struct {
+				Name      string `json:"name"`
+				OwnerName string `json:"ownerName"`
+			} `json:"repository"`
+		} `json:"node"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, exitcode.General("parsing issue details", err)
+	}
+
+	if resp.Node == nil {
+		return nil, exitcode.NotFoundError(fmt.Sprintf("issue %q not found", identifier))
+	}
+
+	return &resolvedEpicIssue{
+		ID:        resp.Node.ID,
+		Number:    resp.Node.Number,
+		Title:     resp.Node.Title,
+		RepoName:  resp.Node.Repository.Name,
+		RepoOwner: resp.Node.Repository.OwnerName,
+	}, nil
+}
+
+// runEpicAdd implements `zh epic add <epic> <issue>...`.
+func runEpicAdd(cmd *cobra.Command, args []string) error {
+	cfg, err := requireWorkspace()
+	if err != nil {
+		return err
+	}
+
+	client := newClient(cfg, cmd)
+	w := cmd.OutOrStdout()
+	ghClient := newGitHubClient(cfg, cmd)
+
+	// Resolve the epic
+	resolved, err := resolve.Epic(client, cfg.Workspace, args[0], cfg.Aliases.Epics)
+	if err != nil {
+		return err
+	}
+
+	if resolved.Type == "legacy" {
+		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by a GitHub issue) — adding issues is only supported for ZenHub epics", resolved.Title))
+	}
+
+	// Resolve issue identifiers
+	issueArgs := args[1:]
+	var issues []resolvedEpicIssue
+	var failed []output.FailedItem
+
+	for _, arg := range issueArgs {
+		issue, err := resolveIssueForEpic(client, cfg.Workspace, arg, epicAddRepo, ghClient)
+		if err != nil {
+			if epicAddContinueOnError {
+				failed = append(failed, output.FailedItem{
+					Ref:    arg,
+					Reason: err.Error(),
+				})
+				continue
+			}
+			return err
+		}
+		issues = append(issues, *issue)
+	}
+
+	if len(issues) == 0 && len(failed) > 0 {
+		return exitcode.Generalf("all issues failed to resolve")
+	}
+
+	// Dry run
+	if epicAddDryRun {
+		return renderEpicAddDryRun(w, resolved, issues, failed)
+	}
+
+	// Execute the mutation
+	issueIDs := make([]string, len(issues))
+	for i, iss := range issues {
+		issueIDs[i] = iss.ID
+	}
+
+	data, err := client.Execute(addIssuesToZenhubEpicsMutation, map[string]any{
+		"input": map[string]any{
+			"zenhubEpicIds": []string{resolved.ID},
+			"issueIds":      issueIDs,
+		},
+	})
+	if err != nil {
+		return exitcode.General("adding issues to epic", err)
+	}
+
+	// Parse response (just confirm mutation succeeded)
+	var resp struct {
+		AddIssuesToZenhubEpics struct {
+			ZenhubEpics []struct {
+				ID    string `json:"id"`
+				Title string `json:"title"`
+			} `json:"zenhubEpics"`
+		} `json:"addIssuesToZenhubEpics"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return exitcode.General("parsing add issues response", err)
+	}
+
+	// Build succeeded list
+	succeeded := make([]output.MutationItem, len(issues))
+	for i, iss := range issues {
+		succeeded[i] = output.MutationItem{
+			Ref:   iss.Ref(),
+			Title: truncateTitle(iss.Title),
+		}
+	}
+
+	// JSON output
+	if output.IsJSON(outputFormat) {
+		return output.JSON(w, map[string]any{
+			"epic":  map[string]any{"id": resolved.ID, "title": resolved.Title},
+			"added": formatEpicIssueItemsJSON(issues),
+		})
+	}
+
+	// Render output
+	if len(failed) > 0 {
+		totalAttempted := len(succeeded) + len(failed)
+		header := output.Green(fmt.Sprintf("Added %d of %d issue(s) to epic %q.", len(succeeded), totalAttempted, resolved.Title))
+		output.MutationPartialFailure(w, header, succeeded, failed)
+		return exitcode.Generalf("some issues failed to resolve")
+	} else if len(succeeded) == 1 {
+		output.MutationSingle(w, output.Green(fmt.Sprintf("Added %s to epic %q.", succeeded[0].Ref, resolved.Title)))
+	} else {
+		header := output.Green(fmt.Sprintf("Added %d issue(s) to epic %q.", len(succeeded), resolved.Title))
+		output.MutationBatch(w, header, succeeded)
+	}
+
+	return nil
+}
+
+func renderEpicAddDryRun(w writerFlusher, epic *resolve.EpicResult, issues []resolvedEpicIssue, failed []output.FailedItem) error {
+	if len(issues) > 0 {
+		items := make([]output.MutationItem, len(issues))
+		for i, iss := range issues {
+			items[i] = output.MutationItem{
+				Ref:   iss.Ref(),
+				Title: truncateTitle(iss.Title),
+			}
+		}
+		header := fmt.Sprintf("Would add %d issue(s) to epic %q", len(issues), epic.Title)
+		output.MutationDryRun(w, header, items)
+	}
+
+	if len(failed) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, output.Red("Failed to resolve:"))
+		fmt.Fprintln(w)
+		for _, f := range failed {
+			fmt.Fprintf(w, "  %s  %s\n", f.Ref, output.Red(f.Reason))
+		}
+	}
+
+	return nil
+}
+
+// runEpicRemove implements `zh epic remove <epic> <issue>...`.
+func runEpicRemove(cmd *cobra.Command, args []string) error {
+	cfg, err := requireWorkspace()
+	if err != nil {
+		return err
+	}
+
+	client := newClient(cfg, cmd)
+	w := cmd.OutOrStdout()
+	ghClient := newGitHubClient(cfg, cmd)
+
+	// Resolve the epic
+	resolved, err := resolve.Epic(client, cfg.Workspace, args[0], cfg.Aliases.Epics)
+	if err != nil {
+		return err
+	}
+
+	if resolved.Type == "legacy" {
+		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by a GitHub issue) — removing issues is only supported for ZenHub epics", resolved.Title))
+	}
+
+	// Handle --all flag
+	if epicRemoveAll {
+		return runEpicRemoveAll(client, cfg, w, resolved)
+	}
+
+	if len(args) < 2 {
+		return exitcode.Usage("at least one issue identifier is required (or use --all)")
+	}
+
+	// Resolve issue identifiers
+	issueArgs := args[1:]
+	var issues []resolvedEpicIssue
+	var failed []output.FailedItem
+
+	for _, arg := range issueArgs {
+		issue, err := resolveIssueForEpic(client, cfg.Workspace, arg, epicRemoveRepo, ghClient)
+		if err != nil {
+			if epicRemoveContinueOnError {
+				failed = append(failed, output.FailedItem{
+					Ref:    arg,
+					Reason: err.Error(),
+				})
+				continue
+			}
+			return err
+		}
+		issues = append(issues, *issue)
+	}
+
+	if len(issues) == 0 && len(failed) > 0 {
+		return exitcode.Generalf("all issues failed to resolve")
+	}
+
+	// Dry run
+	if epicRemoveDryRun {
+		return renderEpicRemoveDryRun(w, resolved, issues, failed)
+	}
+
+	// Execute the mutation
+	issueIDs := make([]string, len(issues))
+	for i, iss := range issues {
+		issueIDs[i] = iss.ID
+	}
+
+	data, err := client.Execute(removeIssuesFromZenhubEpicsMutation, map[string]any{
+		"input": map[string]any{
+			"zenhubEpicIds": []string{resolved.ID},
+			"issueIds":      issueIDs,
+		},
+	})
+	if err != nil {
+		return exitcode.General("removing issues from epic", err)
+	}
+
+	var resp struct {
+		RemoveIssuesFromZenhubEpics struct {
+			ZenhubEpics []struct {
+				ID    string `json:"id"`
+				Title string `json:"title"`
+			} `json:"zenhubEpics"`
+		} `json:"removeIssuesFromZenhubEpics"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return exitcode.General("parsing remove issues response", err)
+	}
+
+	// Build succeeded list
+	succeeded := make([]output.MutationItem, len(issues))
+	for i, iss := range issues {
+		succeeded[i] = output.MutationItem{
+			Ref:   iss.Ref(),
+			Title: truncateTitle(iss.Title),
+		}
+	}
+
+	// JSON output
+	if output.IsJSON(outputFormat) {
+		return output.JSON(w, map[string]any{
+			"epic":    map[string]any{"id": resolved.ID, "title": resolved.Title},
+			"removed": formatEpicIssueItemsJSON(issues),
+		})
+	}
+
+	// Render output
+	if len(failed) > 0 {
+		totalAttempted := len(succeeded) + len(failed)
+		header := output.Green(fmt.Sprintf("Removed %d of %d issue(s) from epic %q.", len(succeeded), totalAttempted, resolved.Title))
+		output.MutationPartialFailure(w, header, succeeded, failed)
+		return exitcode.Generalf("some issues failed to resolve")
+	} else if len(succeeded) == 1 {
+		output.MutationSingle(w, output.Green(fmt.Sprintf("Removed %s from epic %q.", succeeded[0].Ref, resolved.Title)))
+	} else {
+		header := output.Green(fmt.Sprintf("Removed %d issue(s) from epic %q.", len(succeeded), resolved.Title))
+		output.MutationBatch(w, header, succeeded)
+	}
+
+	return nil
+}
+
+// runEpicRemoveAll removes all child issues from a ZenHub epic.
+func runEpicRemoveAll(client *api.Client, cfg *config.Config, w writerFlusher, resolved *resolve.EpicResult) error {
+	// Fetch all child issues
+	issues, err := fetchAllEpicChildIssues(client, cfg.Workspace, resolved.ID)
+	if err != nil {
+		return err
+	}
+
+	if len(issues) == 0 {
+		if output.IsJSON(outputFormat) {
+			return output.JSON(w, map[string]any{
+				"epic":    map[string]any{"id": resolved.ID, "title": resolved.Title},
+				"removed": []any{},
+			})
+		}
+		fmt.Fprintf(w, "Epic %q has no child issues.\n", resolved.Title)
+		return nil
+	}
+
+	if epicRemoveDryRun {
+		items := make([]output.MutationItem, len(issues))
+		for i, iss := range issues {
+			items[i] = output.MutationItem{
+				Ref:   iss.Ref(),
+				Title: truncateTitle(iss.Title),
+			}
+		}
+		header := fmt.Sprintf("Would remove all %d issue(s) from epic %q", len(issues), resolved.Title)
+		output.MutationDryRun(w, header, items)
+		return nil
+	}
+
+	// Execute the mutation
+	issueIDs := make([]string, len(issues))
+	for i, iss := range issues {
+		issueIDs[i] = iss.ID
+	}
+
+	data, err := client.Execute(removeIssuesFromZenhubEpicsMutation, map[string]any{
+		"input": map[string]any{
+			"zenhubEpicIds": []string{resolved.ID},
+			"issueIds":      issueIDs,
+		},
+	})
+	if err != nil {
+		return exitcode.General("removing issues from epic", err)
+	}
+
+	var resp struct {
+		RemoveIssuesFromZenhubEpics struct {
+			ZenhubEpics []struct {
+				ID    string `json:"id"`
+				Title string `json:"title"`
+			} `json:"zenhubEpics"`
+		} `json:"removeIssuesFromZenhubEpics"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return exitcode.General("parsing remove issues response", err)
+	}
+
+	if output.IsJSON(outputFormat) {
+		return output.JSON(w, map[string]any{
+			"epic":    map[string]any{"id": resolved.ID, "title": resolved.Title},
+			"removed": formatEpicIssueItemsJSON(issues),
+		})
+	}
+
+	output.MutationSingle(w, output.Green(fmt.Sprintf("Removed all %d issue(s) from epic %q.", len(issues), resolved.Title)))
+
+	return nil
+}
+
+// fetchAllEpicChildIssues fetches all child issues of a ZenHub epic, paginating as needed.
+func fetchAllEpicChildIssues(client *api.Client, workspaceID, epicID string) ([]resolvedEpicIssue, error) {
+	var all []resolvedEpicIssue
+	var cursor *string
+	pageSize := 100
+
+	for {
+		vars := map[string]any{
+			"id":          epicID,
+			"workspaceId": workspaceID,
+			"first":       pageSize,
+		}
+		if cursor != nil {
+			vars["after"] = *cursor
+		}
+
+		data, err := client.Execute(epicChildIssueIDsQuery, vars)
+		if err != nil {
+			return nil, exitcode.General("fetching epic child issues", err)
+		}
+
+		var resp struct {
+			Node *struct {
+				ID          string `json:"id"`
+				Title       string `json:"title"`
+				ChildIssues struct {
+					TotalCount int `json:"totalCount"`
+					PageInfo   struct {
+						HasNextPage bool   `json:"hasNextPage"`
+						EndCursor   string `json:"endCursor"`
+					} `json:"pageInfo"`
+					Nodes []struct {
+						ID         string `json:"id"`
+						Number     int    `json:"number"`
+						Title      string `json:"title"`
+						Repository struct {
+							Name      string `json:"name"`
+							OwnerName string `json:"ownerName"`
+						} `json:"repository"`
+					} `json:"nodes"`
+				} `json:"childIssues"`
+			} `json:"node"`
+		}
+		if err := json.Unmarshal(data, &resp); err != nil {
+			return nil, exitcode.General("parsing epic child issues", err)
+		}
+
+		if resp.Node == nil {
+			return nil, exitcode.NotFoundError(fmt.Sprintf("epic %q not found", epicID))
+		}
+
+		for _, n := range resp.Node.ChildIssues.Nodes {
+			all = append(all, resolvedEpicIssue{
+				ID:        n.ID,
+				Number:    n.Number,
+				Title:     n.Title,
+				RepoName:  n.Repository.Name,
+				RepoOwner: n.Repository.OwnerName,
+			})
+		}
+
+		if !resp.Node.ChildIssues.PageInfo.HasNextPage {
+			break
+		}
+		c := resp.Node.ChildIssues.PageInfo.EndCursor
+		cursor = &c
+	}
+
+	return all, nil
+}
+
+func renderEpicRemoveDryRun(w writerFlusher, epic *resolve.EpicResult, issues []resolvedEpicIssue, failed []output.FailedItem) error {
+	if len(issues) > 0 {
+		items := make([]output.MutationItem, len(issues))
+		for i, iss := range issues {
+			items[i] = output.MutationItem{
+				Ref:   iss.Ref(),
+				Title: truncateTitle(iss.Title),
+			}
+		}
+		header := fmt.Sprintf("Would remove %d issue(s) from epic %q", len(issues), epic.Title)
+		output.MutationDryRun(w, header, items)
+	}
+
+	if len(failed) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, output.Red("Failed to resolve:"))
+		fmt.Fprintln(w)
+		for _, f := range failed {
+			fmt.Fprintf(w, "  %s  %s\n", f.Ref, output.Red(f.Reason))
+		}
+	}
+
+	return nil
+}
+
+func formatEpicIssueItemsJSON(issues []resolvedEpicIssue) []map[string]any {
+	result := make([]map[string]any, len(issues))
+	for i, iss := range issues {
+		result[i] = map[string]any{
+			"id":         iss.ID,
+			"number":     iss.Number,
+			"repository": fmt.Sprintf("%s/%s", iss.RepoOwner, iss.RepoName),
+			"title":      iss.Title,
+		}
+	}
+	return result
 }

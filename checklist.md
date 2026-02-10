@@ -20,7 +20,7 @@
 - [x] `zh epic add <epic> <issue>...`
 - [x] `zh epic remove <epic> <issue>...`
 - [x] `zh epic assignee <epic>`
-- [ ] `zh epic label <epic>`
+- [x] `zh epic label <epic>`
 - [ ] `zh epic key-date <epic>`
 - [ ] `zh epic alias <name> <epic>`
 

@@ -547,7 +547,7 @@ func runEpicLabelOp(cmd *cobra.Command, args []string, op string, dryRun, contin
 
 	totalAttempted := len(succeeded) + len(failed)
 	if len(failed) > 0 {
-		header := output.Green(fmt.Sprintf("%s label(s) %s %s %d of %d epic label(s).", verb, labelDisplay, preposition, len(succeeded), totalAttempted))
+		header := output.Green(fmt.Sprintf("%s %d of %d label(s) %s epic %q.", verb, len(succeeded), totalAttempted, preposition, resolved.Title))
 		output.MutationPartialFailure(w, header, succeeded, failed)
 		return exitcode.Generalf("some labels failed to resolve")
 	} else if len(succeeded) == 1 {

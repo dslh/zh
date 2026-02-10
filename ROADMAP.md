@@ -434,16 +434,16 @@ Build the resolution layer now — almost every subsequent command depends on it
 ## Phase 15: Interactive mode & cold start wizard
 
 ### Cold start wizard
-- [ ] Detect first run (no config file or missing API key)
-- [ ] Prompt for ZenHub API key (with Bubble Tea text input)
-- [ ] Validate API key by making a test API call
-- [ ] Fetch workspace list, present selection prompt
-- [ ] GitHub access selection: `gh` CLI / PAT / none
+- [x] Detect first run (no config file or missing API key)
+- [x] Prompt for ZenHub API key (with Bubble Tea text input)
+- [x] Validate API key by making a test API call
+- [x] Fetch workspace list, present selection prompt
+- [x] GitHub access selection: `gh` CLI / PAT / none
   - If `gh`: verify `gh auth status` works
   - If PAT: prompt for token, validate with a test call
   - If none: display list of features that won't work
-- [ ] Write config file with selections
-- [ ] Tests: mock API responses, verify config file output
+- [x] Write config file with selections
+- [x] Tests: mock API responses, verify config file output
 
 ### Interactive selection
 - [ ] Bubble Tea list component for entity selection

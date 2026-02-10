@@ -10,11 +10,13 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:           "zh",
-	Short:         "ZenHub CLI — like gh, but for ZenHub",
-	Long:          `zh is a command-line tool for interacting with ZenHub. Manage your board, issues, epics, sprints, and more from the terminal.`,
-	SilenceUsage:  true,
-	SilenceErrors: true,
+	Use:               "zh",
+	Short:             "ZenHub CLI — like gh, but for ZenHub",
+	Long:              `zh is a command-line tool for interacting with ZenHub. Manage your board, issues, epics, sprints, and more from the terminal.`,
+	SilenceUsage:      true,
+	SilenceErrors:     true,
+	PersistentPreRunE: setupPersistentPreRun,
+	RunE:              runRoot,
 }
 
 func init() {

@@ -195,11 +195,11 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] Tests: full detail output, without GitHub access, interactive mode
 
 ### `zh issue move <issue>... <pipeline>`
-- [ ] Resolve issue(s) and target pipeline
-- [ ] `--position=<top|bottom|n>` flag
-- [ ] `--dry-run` support
-- [ ] Stop-on-first-error by default, `--continue-on-error` to process all items
-- [ ] Tests: single move, batch move, position flag, dry run, stop-on-error, continue-on-error with partial failure
+- [x] Resolve issue(s) and target pipeline
+- [x] `--position=<top|bottom|n>` flag
+- [x] `--dry-run` support
+- [x] Stop-on-first-error by default, `--continue-on-error` to process all items
+- [x] Tests: single move, batch move, position flag, dry run, stop-on-error, continue-on-error with partial failure
 
 ### `zh issue estimate <issue> <value>`
 - [ ] Resolve issue, set estimate (omit value to clear)

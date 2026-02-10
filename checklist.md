@@ -56,7 +56,7 @@
 - [x] `zh priority list`
 
 ## sprint
-- [ ] `zh sprint list`
+- [x] `zh sprint list`
 - [ ] `zh sprint show <sprint>`
 - [ ] `zh sprint add <sprint> <issue>...`
 - [ ] `zh sprint remove <sprint> <issue>...`

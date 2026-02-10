@@ -35,9 +35,9 @@
 - [x] `zh issue reopen <issue>...`
 - [x] `zh issue connect <pr> <issue>`
 - [x] `zh issue disconnect <pr> <issue>`
-- [ ] `zh issue block <blocker> <blocked>`
-- [ ] `zh issue blockers <issue>`
-- [ ] `zh issue blocking <issue>`
+- [x] `zh issue block <blocker> <blocked>`
+- [x] `zh issue blockers <issue>`
+- [x] `zh issue blocking <issue>`
 - [ ] `zh issue activity <issue>`
 
 ## label

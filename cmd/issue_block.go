@@ -352,8 +352,8 @@ func runIssueBlock(cmd *cobra.Command, args []string) error {
 		}
 		msg := fmt.Sprintf("Would mark %s as blocking %s", blocker.Ref, blocked.Ref)
 		output.MutationDryRun(w, msg, []output.MutationItem{
-			{Ref: blocker.Ref, Title: truncateTitle(blocker.Title), Context: fmt.Sprintf("(%s, blocking)", blocker.Type)},
-			{Ref: blocked.Ref, Title: truncateTitle(blocked.Title), Context: fmt.Sprintf("(%s, blocked)", blocked.Type)},
+			{Ref: blocker.Ref, Title: blockItemDryRunTitle(blocker), Context: fmt.Sprintf("(%s, blocking)", blocker.Type)},
+			{Ref: blocked.Ref, Title: blockItemDryRunTitle(blocked), Context: fmt.Sprintf("(%s, blocked)", blocked.Type)},
 		})
 		return nil
 	}
@@ -686,6 +686,15 @@ func renderBlockDependencyNode(w writerFlusher, node *blockDependencyNode) {
 		label := fmt.Sprintf("[epic] %s", node.Title)
 		fmt.Fprintf(w, "  %s  %s\n", label, output.Dim("("+state+")"))
 	}
+}
+
+// blockItemDryRunTitle returns the title for dry-run display of a block item.
+// For epics, the Ref is the title itself, so we avoid duplicating it.
+func blockItemDryRunTitle(item *blockItem) string {
+	if item.Ref == item.Title {
+		return ""
+	}
+	return truncateTitle(item.Title)
 }
 
 func formatBlockItemJSON(item *blockItem) map[string]any {

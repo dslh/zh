@@ -66,7 +66,7 @@
 
 ## workspace
 - [x] `zh workspace list`
-- [ ] `zh workspace show`
+- [x] `zh workspace show`
 - [ ] `zh workspace switch <workspace>`
 - [ ] `zh workspace repos`
 - [ ] `zh workspace stats`

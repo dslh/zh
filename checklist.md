@@ -41,7 +41,7 @@
 - [x] `zh issue activity <issue>`
 
 ## label
-- [ ] `zh label list`
+- [x] `zh label list`
 
 ## pipeline
 - [ ] `zh pipeline list`

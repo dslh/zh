@@ -5,7 +5,7 @@
 - [x] `zh board --pipeline <name>`
 
 ## cache
-- [ ] `zh cache clear`
+- [x] `zh cache clear`
 
 ## epic
 - [ ] `zh epic list`

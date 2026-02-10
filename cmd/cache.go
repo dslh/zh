@@ -20,6 +20,7 @@ var cacheClearCmd = &cobra.Command{
 	Use:   "clear",
 	Short: "Clear cached data",
 	Long:  `Clear all cached data, or use --workspace to clear only the current workspace's cache.`,
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if cacheClearWorkspace {
 			cfg, err := config.Load()

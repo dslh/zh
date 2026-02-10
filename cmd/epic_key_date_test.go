@@ -39,7 +39,7 @@ func setupEpicKeyDateTest(t *testing.T, ms *testutil.MockServer) {
 
 func TestEpicKeyDateList(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("GetEpicKeyDates", epicKeyDatesResponse())
 	setupEpicKeyDateTest(t, ms)
 
@@ -65,7 +65,7 @@ func TestEpicKeyDateList(t *testing.T) {
 
 func TestEpicKeyDateListNone(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("GetEpicKeyDates", epicKeyDatesEmptyResponse())
 	setupEpicKeyDateTest(t, ms)
 
@@ -85,7 +85,7 @@ func TestEpicKeyDateListNone(t *testing.T) {
 
 func TestEpicKeyDateListJSON(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("GetEpicKeyDates", epicKeyDatesResponse())
 	setupEpicKeyDateTest(t, ms)
 
@@ -138,7 +138,7 @@ func TestEpicKeyDateListLegacyError(t *testing.T) {
 
 func TestEpicKeyDateAdd(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("CreateZenhubEpicKeyDate", createKeyDateResponse())
 	setupEpicKeyDateTest(t, ms)
 
@@ -164,7 +164,7 @@ func TestEpicKeyDateAdd(t *testing.T) {
 
 func TestEpicKeyDateAddDryRun(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	setupEpicKeyDateTest(t, ms)
 
 	buf := new(bytes.Buffer)
@@ -186,7 +186,7 @@ func TestEpicKeyDateAddDryRun(t *testing.T) {
 
 func TestEpicKeyDateAddJSON(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("CreateZenhubEpicKeyDate", createKeyDateResponse())
 	setupEpicKeyDateTest(t, ms)
 
@@ -215,7 +215,7 @@ func TestEpicKeyDateAddJSON(t *testing.T) {
 
 func TestEpicKeyDateAddInvalidDate(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	setupEpicKeyDateTest(t, ms)
 
 	buf := new(bytes.Buffer)
@@ -258,7 +258,7 @@ func TestEpicKeyDateAddLegacyError(t *testing.T) {
 
 func TestEpicKeyDateRemove(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("GetEpicKeyDates", epicKeyDatesResponse())
 	ms.HandleQuery("DeleteZenhubEpicKeyDate", deleteKeyDateResponse())
 	setupEpicKeyDateTest(t, ms)
@@ -282,7 +282,7 @@ func TestEpicKeyDateRemove(t *testing.T) {
 
 func TestEpicKeyDateRemoveDryRun(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("GetEpicKeyDates", epicKeyDatesResponse())
 	setupEpicKeyDateTest(t, ms)
 
@@ -305,7 +305,7 @@ func TestEpicKeyDateRemoveDryRun(t *testing.T) {
 
 func TestEpicKeyDateRemoveJSON(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("GetEpicKeyDates", epicKeyDatesResponse())
 	ms.HandleQuery("DeleteZenhubEpicKeyDate", deleteKeyDateResponse())
 	setupEpicKeyDateTest(t, ms)
@@ -332,7 +332,7 @@ func TestEpicKeyDateRemoveJSON(t *testing.T) {
 
 func TestEpicKeyDateRemoveNotFound(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("GetEpicKeyDates", epicKeyDatesResponse())
 	setupEpicKeyDateTest(t, ms)
 

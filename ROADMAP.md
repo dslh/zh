@@ -279,7 +279,7 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] `--limit` and `--all` flags (default 100 results)
 - [x] Cache epic list
 - [x] Tests: list output, empty workspace
-- [ ] Epic list and resolution use the roadmap query, which only returns epics that have been added to the roadmap. Newly created epics (via `zh epic create`) won't appear until added to the roadmap in ZenHub. Consider using a separate epic-specific query or adding a `--roadmap` flag to `epic create`.
+- [x] Epic list and resolution use the roadmap query, which only returns epics that have been added to the roadmap. Newly created epics (via `zh epic create`) won't appear until added to the roadmap in ZenHub. Consider using a separate epic-specific query or adding a `--roadmap` flag to `epic create`.
 
 ### `zh epic show <epic>`
 - [x] Resolve epic, display: title, state, body, dates, child issues, assignees, labels, estimate

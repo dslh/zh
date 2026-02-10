@@ -38,7 +38,7 @@ func setupEpicAssigneeLabelTest(t *testing.T, ms *testutil.MockServer) {
 
 func TestEpicAssigneeAdd(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListZenhubUsers", zenhubUsersResponse())
 	ms.HandleQuery("AddAssigneesToZenhubEpics", addAssigneesToEpicsResponse())
 	setupEpicAssigneeLabelTest(t, ms)
@@ -62,7 +62,7 @@ func TestEpicAssigneeAdd(t *testing.T) {
 
 func TestEpicAssigneeAddMultiple(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListZenhubUsers", zenhubUsersResponse())
 	ms.HandleQuery("AddAssigneesToZenhubEpics", addAssigneesToEpicsResponse())
 	setupEpicAssigneeLabelTest(t, ms)
@@ -83,7 +83,7 @@ func TestEpicAssigneeAddMultiple(t *testing.T) {
 
 func TestEpicAssigneeAddDryRun(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListZenhubUsers", zenhubUsersResponse())
 	setupEpicAssigneeLabelTest(t, ms)
 
@@ -106,7 +106,7 @@ func TestEpicAssigneeAddDryRun(t *testing.T) {
 
 func TestEpicAssigneeAddJSON(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListZenhubUsers", zenhubUsersResponse())
 	ms.HandleQuery("AddAssigneesToZenhubEpics", addAssigneesToEpicsResponse())
 	setupEpicAssigneeLabelTest(t, ms)
@@ -136,7 +136,7 @@ func TestEpicAssigneeAddJSON(t *testing.T) {
 
 func TestEpicAssigneeAddUserNotFound(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListZenhubUsers", zenhubUsersResponse())
 	setupEpicAssigneeLabelTest(t, ms)
 
@@ -156,7 +156,7 @@ func TestEpicAssigneeAddUserNotFound(t *testing.T) {
 
 func TestEpicAssigneeAddContinueOnError(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListZenhubUsers", zenhubUsersResponse())
 	ms.HandleQuery("AddAssigneesToZenhubEpics", addAssigneesToEpicsResponse())
 	setupEpicAssigneeLabelTest(t, ms)
@@ -199,7 +199,7 @@ func TestEpicAssigneeAddLegacyError(t *testing.T) {
 
 func TestEpicAssigneeAddWithAtPrefix(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListZenhubUsers", zenhubUsersResponse())
 	ms.HandleQuery("AddAssigneesToZenhubEpics", addAssigneesToEpicsResponse())
 	setupEpicAssigneeLabelTest(t, ms)
@@ -222,7 +222,7 @@ func TestEpicAssigneeAddWithAtPrefix(t *testing.T) {
 
 func TestEpicAssigneeRemove(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListZenhubUsers", zenhubUsersResponse())
 	ms.HandleQuery("RemoveAssigneesFromZenhubEpics", removeAssigneesFromEpicsResponse())
 	setupEpicAssigneeLabelTest(t, ms)
@@ -246,7 +246,7 @@ func TestEpicAssigneeRemove(t *testing.T) {
 
 func TestEpicAssigneeRemoveDryRun(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListZenhubUsers", zenhubUsersResponse())
 	setupEpicAssigneeLabelTest(t, ms)
 
@@ -266,7 +266,7 @@ func TestEpicAssigneeRemoveDryRun(t *testing.T) {
 
 func TestEpicAssigneeRemoveJSON(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListZenhubUsers", zenhubUsersResponse())
 	ms.HandleQuery("RemoveAssigneesFromZenhubEpics", removeAssigneesFromEpicsResponse())
 	setupEpicAssigneeLabelTest(t, ms)
@@ -295,7 +295,7 @@ func TestEpicAssigneeRemoveJSON(t *testing.T) {
 
 func TestEpicLabelAdd(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListZenhubLabels", zenhubLabelsResponse())
 	ms.HandleQuery("AddZenhubLabelsToZenhubEpics", addLabelsToEpicsResponse())
 	setupEpicAssigneeLabelTest(t, ms)
@@ -319,7 +319,7 @@ func TestEpicLabelAdd(t *testing.T) {
 
 func TestEpicLabelAddMultiple(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListZenhubLabels", zenhubLabelsResponse())
 	ms.HandleQuery("AddZenhubLabelsToZenhubEpics", addLabelsToEpicsResponse())
 	setupEpicAssigneeLabelTest(t, ms)
@@ -340,7 +340,7 @@ func TestEpicLabelAddMultiple(t *testing.T) {
 
 func TestEpicLabelAddDryRun(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListZenhubLabels", zenhubLabelsResponse())
 	setupEpicAssigneeLabelTest(t, ms)
 
@@ -363,7 +363,7 @@ func TestEpicLabelAddDryRun(t *testing.T) {
 
 func TestEpicLabelAddJSON(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListZenhubLabels", zenhubLabelsResponse())
 	ms.HandleQuery("AddZenhubLabelsToZenhubEpics", addLabelsToEpicsResponse())
 	setupEpicAssigneeLabelTest(t, ms)
@@ -393,7 +393,7 @@ func TestEpicLabelAddJSON(t *testing.T) {
 
 func TestEpicLabelAddNotFound(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListZenhubLabels", zenhubLabelsResponse())
 	setupEpicAssigneeLabelTest(t, ms)
 
@@ -413,7 +413,7 @@ func TestEpicLabelAddNotFound(t *testing.T) {
 
 func TestEpicLabelAddContinueOnError(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListZenhubLabels", zenhubLabelsResponse())
 	ms.HandleQuery("AddZenhubLabelsToZenhubEpics", addLabelsToEpicsResponse())
 	setupEpicAssigneeLabelTest(t, ms)
@@ -458,7 +458,7 @@ func TestEpicLabelAddLegacyError(t *testing.T) {
 
 func TestEpicLabelRemove(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListZenhubLabels", zenhubLabelsResponse())
 	ms.HandleQuery("RemoveZenhubLabelsFromZenhubEpics", removeLabelsFromEpicsResponse())
 	setupEpicAssigneeLabelTest(t, ms)
@@ -482,7 +482,7 @@ func TestEpicLabelRemove(t *testing.T) {
 
 func TestEpicLabelRemoveDryRun(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListZenhubLabels", zenhubLabelsResponse())
 	setupEpicAssigneeLabelTest(t, ms)
 
@@ -502,7 +502,7 @@ func TestEpicLabelRemoveDryRun(t *testing.T) {
 
 func TestEpicLabelRemoveJSON(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListZenhubLabels", zenhubLabelsResponse())
 	ms.HandleQuery("RemoveZenhubLabelsFromZenhubEpics", removeLabelsFromEpicsResponse())
 	setupEpicAssigneeLabelTest(t, ms)

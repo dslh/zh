@@ -250,7 +250,7 @@ func TestEpicCreateHelpText(t *testing.T) {
 
 func TestEpicEdit(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("UpdateZenhubEpic", updateZenhubEpicResponse())
 	setupEpicMutationTest(t, ms)
 
@@ -279,7 +279,7 @@ func TestEpicEdit(t *testing.T) {
 
 func TestEpicEditBody(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("UpdateZenhubEpic", updateZenhubEpicResponse())
 	setupEpicMutationTest(t, ms)
 
@@ -320,7 +320,7 @@ func TestEpicEditNoFlags(t *testing.T) {
 
 func TestEpicEditDryRun(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	setupEpicMutationTest(t, ms)
 
 	buf := new(bytes.Buffer)
@@ -345,7 +345,7 @@ func TestEpicEditDryRun(t *testing.T) {
 
 func TestEpicEditJSON(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("UpdateZenhubEpic", updateZenhubEpicResponse())
 	setupEpicMutationTest(t, ms)
 
@@ -396,7 +396,7 @@ func TestEpicEditLegacyError(t *testing.T) {
 
 func TestEpicDelete(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("GetEpicChildCount", epicChildCountResponse(5))
 	ms.HandleQuery("DeleteZenhubEpic", deleteZenhubEpicResponse())
 	setupEpicMutationTest(t, ms)
@@ -429,7 +429,7 @@ func TestEpicDelete(t *testing.T) {
 
 func TestEpicDeleteDryRun(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("GetEpicChildCount", epicChildCountResponse(3))
 	setupEpicMutationTest(t, ms)
 
@@ -455,7 +455,7 @@ func TestEpicDeleteDryRun(t *testing.T) {
 
 func TestEpicDeleteJSON(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("GetEpicChildCount", epicChildCountResponse(2))
 	ms.HandleQuery("DeleteZenhubEpic", deleteZenhubEpicResponse())
 	setupEpicMutationTest(t, ms)
@@ -507,7 +507,7 @@ func TestEpicDeleteLegacyError(t *testing.T) {
 
 func TestEpicSetState(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("UpdateZenhubEpicState", updateZenhubEpicStateResponse("CLOSED"))
 	setupEpicMutationTest(t, ms)
 
@@ -536,7 +536,7 @@ func TestEpicSetState(t *testing.T) {
 
 func TestEpicSetStateInProgress(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("UpdateZenhubEpicState", updateZenhubEpicStateResponse("IN_PROGRESS"))
 	setupEpicMutationTest(t, ms)
 
@@ -574,7 +574,7 @@ func TestEpicSetStateInvalidState(t *testing.T) {
 
 func TestEpicSetStateDryRun(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	setupEpicMutationTest(t, ms)
 
 	buf := new(bytes.Buffer)
@@ -596,7 +596,7 @@ func TestEpicSetStateDryRun(t *testing.T) {
 
 func TestEpicSetStateApplyToIssues(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("UpdateZenhubEpicState", updateZenhubEpicStateResponse("CLOSED"))
 	setupEpicMutationTest(t, ms)
 
@@ -619,7 +619,7 @@ func TestEpicSetStateApplyToIssues(t *testing.T) {
 
 func TestEpicSetStateJSON(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("UpdateZenhubEpicState", updateZenhubEpicStateResponse("CLOSED"))
 	setupEpicMutationTest(t, ms)
 
@@ -743,29 +743,42 @@ func createLegacyEpicResponse() map[string]any {
 	}
 }
 
-func epicResolutionResponseForMutations() map[string]any {
-	return map[string]any{
+// handleEpicResolutionForMutations registers mock handlers for epic resolution
+// during mutation tests — returns a single ZenHub epic.
+func handleEpicResolutionForMutations(ms *testutil.MockServer) {
+	ms.HandleQuery("ListZenhubEpics", map[string]any{
 		"data": map[string]any{
 			"workspace": map[string]any{
-				"roadmap": map[string]any{
-					"items": map[string]any{
-						"totalCount": 1,
-						"pageInfo": map[string]any{
-							"hasNextPage": false,
-							"endCursor":   "",
-						},
-						"nodes": []any{
-							map[string]any{
-								"__typename": "ZenhubEpic",
-								"id":         "epic-zen-1",
-								"title":      "Q1 Platform Improvements",
-							},
+				"zenhubEpics": map[string]any{
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
+					},
+					"nodes": []any{
+						map[string]any{
+							"id":    "epic-zen-1",
+							"title": "Q1 Platform Improvements",
 						},
 					},
 				},
 			},
 		},
-	}
+	})
+	ms.HandleQuery("ListRoadmapEpics", map[string]any{
+		"data": map[string]any{
+			"workspace": map[string]any{
+				"roadmap": map[string]any{
+					"items": map[string]any{
+						"pageInfo": map[string]any{
+							"hasNextPage": false,
+							"endCursor":   "",
+						},
+						"nodes": []any{},
+					},
+				},
+			},
+		},
+	})
 }
 
 func updateZenhubEpicResponse() map[string]any {
@@ -827,7 +840,7 @@ func updateZenhubEpicStateResponse(state string) map[string]any {
 
 func TestEpicSetDates(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("UpdateZenhubEpicDates", updateZenhubEpicDatesResponse("2025-03-01", "2025-03-31"))
 	setupEpicMutationTest(t, ms)
 
@@ -853,7 +866,7 @@ func TestEpicSetDates(t *testing.T) {
 
 func TestEpicSetDatesClearEnd(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("UpdateZenhubEpicDates", updateZenhubEpicDatesResponse("2025-03-01", ""))
 	setupEpicMutationTest(t, ms)
 
@@ -930,7 +943,7 @@ func TestEpicSetDatesConflicting(t *testing.T) {
 
 func TestEpicSetDatesDryRun(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	setupEpicMutationTest(t, ms)
 
 	buf := new(bytes.Buffer)
@@ -955,7 +968,7 @@ func TestEpicSetDatesDryRun(t *testing.T) {
 
 func TestEpicSetDatesJSON(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("UpdateZenhubEpicDates", updateZenhubEpicDatesResponse("2025-03-01", "2025-03-31"))
 	setupEpicMutationTest(t, ms)
 
@@ -1011,7 +1024,7 @@ func TestEpicSetDatesLegacy(t *testing.T) {
 
 func TestEpicAdd(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListRepos", repoListForEpicResponse())
 	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
 	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
@@ -1037,7 +1050,7 @@ func TestEpicAdd(t *testing.T) {
 
 func TestEpicAddMultiple(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListRepos", repoListForEpicResponse())
 	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
 	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
@@ -1060,7 +1073,7 @@ func TestEpicAddMultiple(t *testing.T) {
 
 func TestEpicAddDryRun(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListRepos", repoListForEpicResponse())
 	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
 	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
@@ -1085,7 +1098,7 @@ func TestEpicAddDryRun(t *testing.T) {
 
 func TestEpicAddJSON(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListRepos", repoListForEpicResponse())
 	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
 	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
@@ -1139,7 +1152,7 @@ func TestEpicAddLegacyError(t *testing.T) {
 
 func TestEpicAddContinueOnError(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListRepos", repoListForEpicResponse())
 	// First issue resolves, second fails (not found)
 	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
@@ -1168,7 +1181,7 @@ func TestEpicAddContinueOnError(t *testing.T) {
 
 func TestEpicRemove(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListRepos", repoListForEpicResponse())
 	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
 	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
@@ -1194,7 +1207,7 @@ func TestEpicRemove(t *testing.T) {
 
 func TestEpicRemoveAll(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("GetEpicChildIssueIDs", epicChildIssueIDsResponse())
 	ms.HandleQuery("RemoveIssuesFromZenhubEpics", removeIssuesFromEpicsResponse())
 	setupEpicMutationTest(t, ms)
@@ -1215,7 +1228,7 @@ func TestEpicRemoveAll(t *testing.T) {
 
 func TestEpicRemoveAllEmpty(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("GetEpicChildIssueIDs", epicChildIssueIDsEmptyResponse())
 	setupEpicMutationTest(t, ms)
 
@@ -1235,7 +1248,7 @@ func TestEpicRemoveAllEmpty(t *testing.T) {
 
 func TestEpicRemoveDryRun(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListRepos", repoListForEpicResponse())
 	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
 	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
@@ -1260,7 +1273,7 @@ func TestEpicRemoveDryRun(t *testing.T) {
 
 func TestEpicRemoveAllDryRun(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("GetEpicChildIssueIDs", epicChildIssueIDsResponse())
 	setupEpicMutationTest(t, ms)
 
@@ -1280,7 +1293,7 @@ func TestEpicRemoveAllDryRun(t *testing.T) {
 
 func TestEpicRemoveJSON(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("ListRepos", repoListForEpicResponse())
 	ms.HandleQuery("IssueByInfo", issueByInfoForEpicResponse("i1", 1))
 	ms.HandleQuery("GetIssueForEpic", issueDetailForEpicResponse("i1", 1, "Fix login button alignment"))
@@ -1351,7 +1364,7 @@ func TestEpicRemoveNoIssues(t *testing.T) {
 
 func TestEpicEstimateSet(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("GetZenhubEpicEstimate", epicEstimateQueryResponse(5))
 	ms.HandleQuery("SetEstimateOnZenhubEpics", setEpicEstimateResponse(13))
 	setupEpicMutationTest(t, ms)
@@ -1375,7 +1388,7 @@ func TestEpicEstimateSet(t *testing.T) {
 
 func TestEpicEstimateClear(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("GetZenhubEpicEstimate", epicEstimateQueryResponse(5))
 	ms.HandleQuery("SetEstimateOnZenhubEpics", setEpicEstimateClearResponse())
 	setupEpicMutationTest(t, ms)
@@ -1396,7 +1409,7 @@ func TestEpicEstimateClear(t *testing.T) {
 
 func TestEpicEstimateDryRun(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("GetZenhubEpicEstimate", epicEstimateQueryResponse(5))
 	setupEpicMutationTest(t, ms)
 
@@ -1422,7 +1435,7 @@ func TestEpicEstimateDryRun(t *testing.T) {
 
 func TestEpicEstimateClearDryRun(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("GetZenhubEpicEstimate", epicEstimateQueryResponseNone())
 	setupEpicMutationTest(t, ms)
 
@@ -1445,7 +1458,7 @@ func TestEpicEstimateClearDryRun(t *testing.T) {
 
 func TestEpicEstimateJSON(t *testing.T) {
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	handleEpicResolutionForMutations(ms)
 	ms.HandleQuery("GetZenhubEpicEstimate", epicEstimateQueryResponse(5))
 	ms.HandleQuery("SetEstimateOnZenhubEpics", setEpicEstimateResponse(13))
 	setupEpicMutationTest(t, ms)

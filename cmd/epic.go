@@ -195,7 +195,29 @@ type blockItemEpic struct {
 
 // GraphQL queries
 
-const listEpicsFullQuery = `query ListEpics($workspaceId: ID!, $first: Int!, $after: String) {
+const listZenhubEpicsFullQuery = `query ListZenhubEpicsFull($workspaceId: ID!, $first: Int!, $after: String) {
+  workspace(id: $workspaceId) {
+    zenhubEpics(first: $first, after: $after) {
+      totalCount
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        id
+        title
+        state
+        startOn
+        endOn
+        estimate { value }
+        zenhubIssueCountProgress { open closed total }
+        zenhubIssueEstimateProgress { open closed total }
+      }
+    }
+  }
+}`
+
+const listRoadmapEpicsFullQuery = `query ListRoadmapEpicsFull($workspaceId: ID!, $first: Int!, $after: String) {
   workspace(id: $workspaceId) {
     roadmap {
       items(first: $first, after: $after) {
@@ -513,8 +535,53 @@ func runEpicList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// fetchEpicList fetches epics from the workspace roadmap with pagination.
+// fetchEpicList fetches epics by combining the zenhubEpics query (for all
+// standalone epics) with the roadmap query (for legacy epics). Results are
+// deduplicated by ID.
 func fetchEpicList(client *api.Client, workspaceID string, limit int) ([]epicListEntry, int, error) {
+	seen := make(map[string]bool)
+	var allEpics []epicListEntry
+
+	// 1. Fetch all ZenHub epics via the dedicated query.
+	zenhubEpics, zenhubTotal, err := fetchZenhubEpicList(client, workspaceID, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	for _, e := range zenhubEpics {
+		seen[e.ID] = true
+		allEpics = append(allEpics, e)
+	}
+
+	// 2. Fetch roadmap items to pick up legacy epics. Apply remaining limit
+	//    if one was specified.
+	roadmapLimit := 0
+	if limit > 0 {
+		roadmapLimit = limit - len(allEpics)
+		if roadmapLimit <= 0 {
+			return allEpics, zenhubTotal, nil
+		}
+	}
+	roadmapEpics, _, err := fetchRoadmapEpicList(client, workspaceID, roadmapLimit)
+	if err != nil {
+		return nil, 0, err
+	}
+	for _, e := range roadmapEpics {
+		if !seen[e.ID] {
+			seen[e.ID] = true
+			allEpics = append(allEpics, e)
+		}
+	}
+
+	// Apply limit after merge if needed.
+	if limit > 0 && len(allEpics) > limit {
+		allEpics = allEpics[:limit]
+	}
+
+	return allEpics, len(allEpics), nil
+}
+
+// fetchZenhubEpicList fetches ZenHub epics with full details for the list view.
+func fetchZenhubEpicList(client *api.Client, workspaceID string, limit int) ([]epicListEntry, int, error) {
 	var allEpics []epicListEntry
 	var cursor *string
 	totalCount := 0
@@ -539,9 +606,77 @@ func fetchEpicList(client *api.Client, workspaceID string, limit int) ([]epicLis
 			vars["after"] = *cursor
 		}
 
-		data, err := client.Execute(listEpicsFullQuery, vars)
+		data, err := client.Execute(listZenhubEpicsFullQuery, vars)
 		if err != nil {
-			return nil, 0, exitcode.General("fetching epics", err)
+			return nil, 0, exitcode.General("fetching zenhub epics", err)
+		}
+
+		var resp struct {
+			Workspace struct {
+				ZenhubEpics struct {
+					TotalCount int `json:"totalCount"`
+					PageInfo   struct {
+						HasNextPage bool   `json:"hasNextPage"`
+						EndCursor   string `json:"endCursor"`
+					} `json:"pageInfo"`
+					Nodes []json.RawMessage `json:"nodes"`
+				} `json:"zenhubEpics"`
+			} `json:"workspace"`
+		}
+		if err := json.Unmarshal(data, &resp); err != nil {
+			return nil, 0, exitcode.General("parsing zenhub epics response", err)
+		}
+
+		totalCount = resp.Workspace.ZenhubEpics.TotalCount
+
+		for _, raw := range resp.Workspace.ZenhubEpics.Nodes {
+			if entry, ok := parseZenhubEpicListItem(raw); ok {
+				allEpics = append(allEpics, entry)
+			}
+		}
+
+		if !resp.Workspace.ZenhubEpics.PageInfo.HasNextPage {
+			break
+		}
+		if limit > 0 && len(allEpics) >= limit {
+			break
+		}
+
+		cursor = &resp.Workspace.ZenhubEpics.PageInfo.EndCursor
+	}
+
+	return allEpics, totalCount, nil
+}
+
+// fetchRoadmapEpicList fetches epics from the workspace roadmap with full details.
+func fetchRoadmapEpicList(client *api.Client, workspaceID string, limit int) ([]epicListEntry, int, error) {
+	var allEpics []epicListEntry
+	var cursor *string
+	totalCount := 0
+	pageSize := 50
+
+	for {
+		if limit > 0 {
+			remaining := limit - len(allEpics)
+			if remaining <= 0 {
+				break
+			}
+			if remaining < pageSize {
+				pageSize = remaining
+			}
+		}
+
+		vars := map[string]any{
+			"workspaceId": workspaceID,
+			"first":       pageSize,
+		}
+		if cursor != nil {
+			vars["after"] = *cursor
+		}
+
+		data, err := client.Execute(listRoadmapEpicsFullQuery, vars)
+		if err != nil {
+			return nil, 0, exitcode.General("fetching roadmap epics", err)
 		}
 
 		var resp struct {
@@ -559,7 +694,7 @@ func fetchEpicList(client *api.Client, workspaceID string, limit int) ([]epicLis
 			} `json:"workspace"`
 		}
 		if err := json.Unmarshal(data, &resp); err != nil {
-			return nil, 0, exitcode.General("parsing epics response", err)
+			return nil, 0, exitcode.General("parsing roadmap epics response", err)
 		}
 
 		totalCount = resp.Workspace.Roadmap.Items.TotalCount
@@ -581,6 +716,47 @@ func fetchEpicList(client *api.Client, workspaceID string, limit int) ([]epicLis
 	}
 
 	return allEpics, totalCount, nil
+}
+
+// parseZenhubEpicListItem parses a ZenHub epic node from the zenhubEpics query.
+func parseZenhubEpicListItem(raw json.RawMessage) (epicListEntry, bool) {
+	var ze struct {
+		ID       string `json:"id"`
+		Title    string `json:"title"`
+		State    string `json:"state"`
+		StartOn  string `json:"startOn"`
+		EndOn    string `json:"endOn"`
+		Estimate *struct {
+			Value float64 `json:"value"`
+		} `json:"estimate"`
+		IssueCountProgress struct {
+			Open   int `json:"open"`
+			Closed int `json:"closed"`
+			Total  int `json:"total"`
+		} `json:"zenhubIssueCountProgress"`
+		IssueEstimateProgress struct {
+			Open   int `json:"open"`
+			Closed int `json:"closed"`
+			Total  int `json:"total"`
+		} `json:"zenhubIssueEstimateProgress"`
+	}
+	if err := json.Unmarshal(raw, &ze); err != nil {
+		return epicListEntry{}, false
+	}
+	if ze.ID == "" {
+		return epicListEntry{}, false
+	}
+	return epicListEntry{
+		ID:                    ze.ID,
+		Title:                 ze.Title,
+		Type:                  "zenhub",
+		State:                 ze.State,
+		StartOn:               ze.StartOn,
+		EndOn:                 ze.EndOn,
+		Estimate:              ze.Estimate,
+		IssueCountProgress:    ze.IssueCountProgress,
+		IssueEstimateProgress: ze.IssueEstimateProgress,
+	}, true
 }
 
 // parseEpicListItem parses a single roadmap item into an epicListEntry.

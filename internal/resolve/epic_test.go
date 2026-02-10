@@ -164,9 +164,31 @@ func TestEpicResolveNotFoundRefreshesCache(t *testing.T) {
 	}
 	_ = cache.Set(EpicCacheKey("ws1"), old)
 
-	// Mock server returns updated epic list
+	// Mock server returns updated epic list from both queries
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", map[string]any{
+	ms.HandleQuery("ListZenhubEpics", map[string]any{
+		"data": map[string]any{
+			"workspace": map[string]any{
+				"zenhubEpics": map[string]any{
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
+					},
+					"nodes": []any{
+						map[string]any{
+							"id":    "e1",
+							"title": "Old Epic",
+						},
+						map[string]any{
+							"id":    "e2",
+							"title": "New Epic",
+						},
+					},
+				},
+			},
+		},
+	})
+	ms.HandleQuery("ListRoadmapEpics", map[string]any{
 		"data": map[string]any{
 			"workspace": map[string]any{
 				"roadmap": map[string]any{
@@ -175,18 +197,7 @@ func TestEpicResolveNotFoundRefreshesCache(t *testing.T) {
 							"hasNextPage": false,
 							"endCursor":   "",
 						},
-						"nodes": []any{
-							map[string]any{
-								"__typename": "ZenhubEpic",
-								"id":         "e1",
-								"title":      "Old Epic",
-							},
-							map[string]any{
-								"__typename": "ZenhubEpic",
-								"id":         "e2",
-								"title":      "New Epic",
-							},
-						},
+						"nodes": []any{},
 					},
 				},
 			},
@@ -218,7 +229,25 @@ func TestEpicResolveNotFoundAfterRefresh(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", cacheDir)
 
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", map[string]any{
+	ms.HandleQuery("ListZenhubEpics", map[string]any{
+		"data": map[string]any{
+			"workspace": map[string]any{
+				"zenhubEpics": map[string]any{
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
+					},
+					"nodes": []any{
+						map[string]any{
+							"id":    "e1",
+							"title": "Only Epic",
+						},
+					},
+				},
+			},
+		},
+	})
+	ms.HandleQuery("ListRoadmapEpics", map[string]any{
 		"data": map[string]any{
 			"workspace": map[string]any{
 				"roadmap": map[string]any{
@@ -227,13 +256,7 @@ func TestEpicResolveNotFoundAfterRefresh(t *testing.T) {
 							"hasNextPage": false,
 							"endCursor":   "",
 						},
-						"nodes": []any{
-							map[string]any{
-								"__typename": "ZenhubEpic",
-								"id":         "e1",
-								"title":      "Only Epic",
-							},
-						},
+						"nodes": []any{},
 					},
 				},
 			},
@@ -258,7 +281,25 @@ func TestFetchEpics(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", cacheDir)
 
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", map[string]any{
+	ms.HandleQuery("ListZenhubEpics", map[string]any{
+		"data": map[string]any{
+			"workspace": map[string]any{
+				"zenhubEpics": map[string]any{
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
+					},
+					"nodes": []any{
+						map[string]any{
+							"id":    "e1",
+							"title": "ZenHub Epic",
+						},
+					},
+				},
+			},
+		},
+	})
+	ms.HandleQuery("ListRoadmapEpics", map[string]any{
 		"data": map[string]any{
 			"workspace": map[string]any{
 				"roadmap": map[string]any{
@@ -303,17 +344,17 @@ func TestFetchEpics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Projects should be filtered out, only epics remain
+	// Projects should be filtered out, ZenHub epic deduplicated, only unique epics remain
 	if len(epics) != 2 {
 		t.Errorf("expected 2 epics, got %d", len(epics))
 	}
 
-	// Verify ZenHub epic
+	// Verify ZenHub epic (from zenhubEpics query)
 	if epics[0].Type != "zenhub" || epics[0].Title != "ZenHub Epic" {
 		t.Errorf("expected zenhub epic, got %+v", epics[0])
 	}
 
-	// Verify legacy epic
+	// Verify legacy epic (from roadmap query)
 	if epics[1].Type != "legacy" || epics[1].Title != "Legacy Epic" || epics[1].IssueNumber != 99 {
 		t.Errorf("expected legacy epic, got %+v", epics[1])
 	}
@@ -328,5 +369,66 @@ func TestFetchEpics(t *testing.T) {
 	}
 	if len(cached) != 2 {
 		t.Errorf("cache should have 2 entries, got %d", len(cached))
+	}
+}
+
+func TestFetchEpicsDeduplicates(t *testing.T) {
+	cacheDir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cacheDir)
+
+	ms := testutil.NewMockServer(t)
+	// Same ZenHub epic appears in both queries
+	ms.HandleQuery("ListZenhubEpics", map[string]any{
+		"data": map[string]any{
+			"workspace": map[string]any{
+				"zenhubEpics": map[string]any{
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
+					},
+					"nodes": []any{
+						map[string]any{
+							"id":    "e1",
+							"title": "Shared Epic",
+						},
+						map[string]any{
+							"id":    "e2",
+							"title": "ZenHub Only Epic",
+						},
+					},
+				},
+			},
+		},
+	})
+	ms.HandleQuery("ListRoadmapEpics", map[string]any{
+		"data": map[string]any{
+			"workspace": map[string]any{
+				"roadmap": map[string]any{
+					"items": map[string]any{
+						"pageInfo": map[string]any{
+							"hasNextPage": false,
+							"endCursor":   "",
+						},
+						"nodes": []any{
+							map[string]any{
+								"__typename": "ZenhubEpic",
+								"id":         "e1",
+								"title":      "Shared Epic",
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	client := api.New("test-key", api.WithEndpoint(ms.URL()))
+
+	epics, err := FetchEpics(client, "ws1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(epics) != 2 {
+		t.Errorf("expected 2 epics (deduplicated), got %d", len(epics))
 	}
 }

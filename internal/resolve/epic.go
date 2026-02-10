@@ -34,11 +34,25 @@ func EpicCacheKey(workspaceID string) cache.Key {
 	return cache.NewScopedKey("epics", workspaceID)
 }
 
-const listEpicsQuery = `query ListEpics($workspaceId: ID!, $first: Int!, $after: String) {
+const listZenhubEpicsQuery = `query ListZenhubEpics($workspaceId: ID!, $first: Int!, $after: String) {
+  workspace(id: $workspaceId) {
+    zenhubEpics(first: $first, after: $after) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        id
+        title
+      }
+    }
+  }
+}`
+
+const listRoadmapEpicsQuery = `query ListRoadmapEpics($workspaceId: ID!, $first: Int!, $after: String) {
   workspace(id: $workspaceId) {
     roadmap {
       items(first: $first, after: $after) {
-        totalCount
         pageInfo {
           hasNextPage
           endCursor
@@ -67,9 +81,44 @@ const listEpicsQuery = `query ListEpics($workspaceId: ID!, $first: Int!, $after:
 }`
 
 // FetchEpics fetches all epics for a workspace from the API and updates
-// the cache. Returns the cached epic entries.
+// the cache. It combines the zenhubEpics query (which returns all standalone
+// epics, including those not on the roadmap) with the roadmap items query
+// (which is the only way to discover legacy epics). Results are deduplicated
+// by ID so epics appearing in both sources are not listed twice.
 func FetchEpics(client *api.Client, workspaceID string) ([]CachedEpic, error) {
+	seen := make(map[string]bool)
 	var allEpics []CachedEpic
+
+	// 1. Fetch all ZenHub epics via the dedicated query.
+	zenhubEpics, err := fetchZenhubEpics(client, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range zenhubEpics {
+		seen[e.ID] = true
+		allEpics = append(allEpics, e)
+	}
+
+	// 2. Fetch roadmap items to pick up legacy epics (and any ZenHub epics
+	//    already seen, which we skip).
+	roadmapEpics, err := fetchRoadmapEpics(client, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range roadmapEpics {
+		if !seen[e.ID] {
+			seen[e.ID] = true
+			allEpics = append(allEpics, e)
+		}
+	}
+
+	_ = cache.Set(EpicCacheKey(workspaceID), allEpics)
+	return allEpics, nil
+}
+
+// fetchZenhubEpics fetches all standalone ZenHub epics via workspace.zenhubEpics.
+func fetchZenhubEpics(client *api.Client, workspaceID string) ([]CachedEpic, error) {
+	var result []CachedEpic
 	var cursor *string
 
 	for {
@@ -81,9 +130,64 @@ func FetchEpics(client *api.Client, workspaceID string) ([]CachedEpic, error) {
 			vars["after"] = *cursor
 		}
 
-		data, err := client.Execute(listEpicsQuery, vars)
+		data, err := client.Execute(listZenhubEpicsQuery, vars)
 		if err != nil {
-			return nil, exitcode.General("fetching epics", err)
+			return nil, exitcode.General("fetching zenhub epics", err)
+		}
+
+		var resp struct {
+			Workspace struct {
+				ZenhubEpics struct {
+					PageInfo struct {
+						HasNextPage bool   `json:"hasNextPage"`
+						EndCursor   string `json:"endCursor"`
+					} `json:"pageInfo"`
+					Nodes []struct {
+						ID    string `json:"id"`
+						Title string `json:"title"`
+					} `json:"nodes"`
+				} `json:"zenhubEpics"`
+			} `json:"workspace"`
+		}
+		if err := json.Unmarshal(data, &resp); err != nil {
+			return nil, exitcode.General("parsing zenhub epics response", err)
+		}
+
+		for _, n := range resp.Workspace.ZenhubEpics.Nodes {
+			result = append(result, CachedEpic{
+				ID:    n.ID,
+				Title: n.Title,
+				Type:  "zenhub",
+			})
+		}
+
+		if !resp.Workspace.ZenhubEpics.PageInfo.HasNextPage {
+			break
+		}
+		cursor = &resp.Workspace.ZenhubEpics.PageInfo.EndCursor
+	}
+
+	return result, nil
+}
+
+// fetchRoadmapEpics fetches epics from the workspace roadmap. This is
+// the only way to discover legacy (issue-backed) epics.
+func fetchRoadmapEpics(client *api.Client, workspaceID string) ([]CachedEpic, error) {
+	var result []CachedEpic
+	var cursor *string
+
+	for {
+		vars := map[string]any{
+			"workspaceId": workspaceID,
+			"first":       100,
+		}
+		if cursor != nil {
+			vars["after"] = *cursor
+		}
+
+		data, err := client.Execute(listRoadmapEpicsQuery, vars)
+		if err != nil {
+			return nil, exitcode.General("fetching roadmap epics", err)
 		}
 
 		var resp struct {
@@ -100,12 +204,12 @@ func FetchEpics(client *api.Client, workspaceID string) ([]CachedEpic, error) {
 			} `json:"workspace"`
 		}
 		if err := json.Unmarshal(data, &resp); err != nil {
-			return nil, exitcode.General("parsing epics response", err)
+			return nil, exitcode.General("parsing roadmap epics response", err)
 		}
 
 		for _, raw := range resp.Workspace.Roadmap.Items.Nodes {
 			if epic, ok := parseRoadmapItem(raw); ok {
-				allEpics = append(allEpics, epic)
+				result = append(result, epic)
 			}
 		}
 
@@ -115,8 +219,7 @@ func FetchEpics(client *api.Client, workspaceID string) ([]CachedEpic, error) {
 		cursor = &resp.Workspace.Roadmap.Items.PageInfo.EndCursor
 	}
 
-	_ = cache.Set(EpicCacheKey(workspaceID), allEpics)
-	return allEpics, nil
+	return result, nil
 }
 
 // parseRoadmapItem parses a single roadmap item node into a CachedEpic.

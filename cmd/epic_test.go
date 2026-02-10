@@ -18,7 +18,7 @@ func TestEpicList(t *testing.T) {
 	resetEpicFlags()
 
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicListResponse())
+	handleEpicListQueries(ms)
 
 	cacheDir := t.TempDir()
 	configDir := t.TempDir()
@@ -91,7 +91,7 @@ func TestEpicListJSON(t *testing.T) {
 	resetEpicFlags()
 
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicListResponse())
+	handleEpicListQueries(ms)
 
 	cacheDir := t.TempDir()
 	configDir := t.TempDir()
@@ -131,7 +131,21 @@ func TestEpicListEmpty(t *testing.T) {
 	resetEpicFlags()
 
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", map[string]any{
+	ms.HandleQuery("ListZenhubEpicsFull", map[string]any{
+		"data": map[string]any{
+			"workspace": map[string]any{
+				"zenhubEpics": map[string]any{
+					"totalCount": 0,
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
+					},
+					"nodes": []any{},
+				},
+			},
+		},
+	})
+	ms.HandleQuery("ListRoadmapEpicsFull", map[string]any{
 		"data": map[string]any{
 			"workspace": map[string]any{
 				"roadmap": map[string]any{
@@ -181,7 +195,7 @@ func TestEpicShowZenhub(t *testing.T) {
 	resetEpicFlags()
 
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponse())
+	handleEpicResolutionQueries(ms)
 	ms.HandleQuery("GetZenhubEpic", epicShowZenhubResponse())
 
 	cacheDir := t.TempDir()
@@ -285,7 +299,7 @@ func TestEpicShowJSON(t *testing.T) {
 	resetEpicFlags()
 
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponse())
+	handleEpicResolutionQueries(ms)
 	ms.HandleQuery("GetZenhubEpic", epicShowZenhubResponse())
 
 	cacheDir := t.TempDir()
@@ -354,7 +368,7 @@ func TestEpicProgressZenhub(t *testing.T) {
 	resetEpicFlags()
 
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponse())
+	handleEpicResolutionQueries(ms)
 	ms.HandleQuery("GetZenhubEpicProgress", epicProgressZenhubResponse())
 
 	cacheDir := t.TempDir()
@@ -450,7 +464,7 @@ func TestEpicProgressNoIssues(t *testing.T) {
 	resetEpicFlags()
 
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponse())
+	handleEpicResolutionQueries(ms)
 	ms.HandleQuery("GetZenhubEpicProgress", epicProgressEmptyResponse())
 
 	cacheDir := t.TempDir()
@@ -485,7 +499,7 @@ func TestEpicProgressJSON(t *testing.T) {
 	resetEpicFlags()
 
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponse())
+	handleEpicResolutionQueries(ms)
 	ms.HandleQuery("GetZenhubEpicProgress", epicProgressZenhubResponse())
 
 	cacheDir := t.TempDir()
@@ -539,7 +553,7 @@ func TestEpicAliasSet(t *testing.T) {
 	resetEpicMutationFlags()
 
 	ms := testutil.NewMockServer(t)
-	ms.HandleQuery("ListEpics", epicResolutionResponse())
+	handleEpicResolutionQueries(ms)
 
 	cacheDir := t.TempDir()
 	configDir := t.TempDir()
@@ -627,8 +641,43 @@ func TestEpicAliasDelete(t *testing.T) {
 
 // --- helpers ---
 
-func epicListResponse() map[string]any {
-	return map[string]any{
+// handleEpicListQueries registers mock handlers for both the zenhubEpics
+// and roadmap queries used by fetchEpicList.
+func handleEpicListQueries(ms *testutil.MockServer) {
+	ms.HandleQuery("ListZenhubEpicsFull", map[string]any{
+		"data": map[string]any{
+			"workspace": map[string]any{
+				"zenhubEpics": map[string]any{
+					"totalCount": 1,
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
+					},
+					"nodes": []any{
+						map[string]any{
+							"id":       "epic-zen-1",
+							"title":    "Q1 Platform Improvements",
+							"state":    "IN_PROGRESS",
+							"startOn":  "2026-01-01",
+							"endOn":    "2026-03-31",
+							"estimate": map[string]any{"value": 34},
+							"zenhubIssueCountProgress": map[string]any{
+								"open":   8,
+								"closed": 12,
+								"total":  20,
+							},
+							"zenhubIssueEstimateProgress": map[string]any{
+								"open":   21,
+								"closed": 34,
+								"total":  55,
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+	ms.HandleQuery("ListRoadmapEpicsFull", map[string]any{
 		"data": map[string]any{
 			"workspace": map[string]any{
 				"roadmap": map[string]any{
@@ -691,27 +740,40 @@ func epicListResponse() map[string]any {
 				},
 			},
 		},
-	}
+	})
 }
 
-// epicResolutionResponse is used when epic resolution needs to fetch the list.
-func epicResolutionResponse() map[string]any {
-	return map[string]any{
+// handleEpicResolutionQueries registers mock handlers for both queries
+// used by resolve.FetchEpics during epic resolution.
+func handleEpicResolutionQueries(ms *testutil.MockServer) {
+	ms.HandleQuery("ListZenhubEpics", map[string]any{
+		"data": map[string]any{
+			"workspace": map[string]any{
+				"zenhubEpics": map[string]any{
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
+					},
+					"nodes": []any{
+						map[string]any{
+							"id":    "epic-zen-1",
+							"title": "Q1 Platform Improvements",
+						},
+					},
+				},
+			},
+		},
+	})
+	ms.HandleQuery("ListRoadmapEpics", map[string]any{
 		"data": map[string]any{
 			"workspace": map[string]any{
 				"roadmap": map[string]any{
 					"items": map[string]any{
-						"totalCount": 2,
 						"pageInfo": map[string]any{
 							"hasNextPage": false,
 							"endCursor":   "",
 						},
 						"nodes": []any{
-							map[string]any{
-								"__typename": "ZenhubEpic",
-								"id":         "epic-zen-1",
-								"title":      "Q1 Platform Improvements",
-							},
 							map[string]any{
 								"__typename": "Epic",
 								"id":         "epic-legacy-1",
@@ -729,7 +791,7 @@ func epicResolutionResponse() map[string]any {
 				},
 			},
 		},
-	}
+	})
 }
 
 func epicShowZenhubResponse() map[string]any {

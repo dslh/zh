@@ -415,6 +415,9 @@ var ghNewFunc = gh.New
 // newClient creates an API client from config, wiring up verbose logging.
 func newClient(cfg *config.Config, cmd *cobra.Command) *api.Client {
 	var opts []api.Option
+	if cfg.RESTAPIKey != "" {
+		opts = append(opts, api.WithRESTAPIKey(cfg.RESTAPIKey))
+	}
 	if verbose {
 		opts = append(opts, api.WithVerbose(func(format string, args ...any) {
 			fmt.Fprintf(cmd.ErrOrStderr(), format, args...)

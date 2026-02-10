@@ -25,7 +25,7 @@ func TestUpdateEpicIssues(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := New("test-api-key", WithEndpoint(ts.URL))
+	client := New("test-api-key", WithEndpoint(ts.URL), WithRESTAPIKey("test-rest-key"))
 
 	addIssues := []RESTIssueRef{
 		{RepoID: 123, IssueNumber: 42},
@@ -43,8 +43,8 @@ func TestUpdateEpicIssues(t *testing.T) {
 		t.Errorf("unexpected path: %s", receivedPath)
 	}
 
-	if receivedAuth != "test-api-key" {
-		t.Errorf("unexpected auth header: %s", receivedAuth)
+	if receivedAuth != "test-rest-key" {
+		t.Errorf("unexpected auth header: %s, want test-rest-key", receivedAuth)
 	}
 
 	add := receivedBody["add_issues"].([]any)
@@ -79,7 +79,7 @@ func TestUpdateEpicIssuesAuthFailure(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := New("bad-key", WithEndpoint(ts.URL))
+	client := New("bad-key", WithEndpoint(ts.URL), WithRESTAPIKey("bad-rest-key"))
 
 	err := client.UpdateEpicIssues(789, 10, []RESTIssueRef{{RepoID: 123, IssueNumber: 42}}, nil)
 	if err == nil {
@@ -87,6 +87,18 @@ func TestUpdateEpicIssuesAuthFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "authentication failed") {
 		t.Errorf("error should mention auth failure, got: %v", err)
+	}
+}
+
+func TestUpdateEpicIssuesNoRESTKey(t *testing.T) {
+	client := New("graphql-key", WithEndpoint("http://localhost:1234"))
+
+	err := client.UpdateEpicIssues(789, 10, []RESTIssueRef{{RepoID: 123, IssueNumber: 42}}, nil)
+	if err == nil {
+		t.Fatal("expected error when no REST API key is configured")
+	}
+	if !strings.Contains(err.Error(), "REST API token") {
+		t.Errorf("error should mention REST API token, got: %v", err)
 	}
 }
 

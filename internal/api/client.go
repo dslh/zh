@@ -22,6 +22,7 @@ const (
 type Client struct {
 	endpoint   string
 	apiKey     string
+	restAPIKey string // separate token for REST v1 API (legacy epic operations)
 	httpClient *http.Client
 	verbose    bool
 	logFunc    func(format string, args ...any) // writes to stderr when verbose
@@ -41,6 +42,11 @@ func WithVerbose(logFunc func(format string, args ...any)) Option {
 		c.verbose = true
 		c.logFunc = logFunc
 	}
+}
+
+// WithRESTAPIKey sets the REST v1 API key for legacy epic operations.
+func WithRESTAPIKey(key string) Option {
+	return func(c *Client) { c.restAPIKey = key }
 }
 
 // WithHTTPClient sets a custom HTTP client.

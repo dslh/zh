@@ -23,10 +23,11 @@ type AliasConfig struct {
 
 // Config holds the complete zh configuration.
 type Config struct {
-	APIKey    string       `mapstructure:"api_key"`
-	Workspace string       `mapstructure:"workspace"`
-	GitHub    GitHubConfig `mapstructure:"github"`
-	Aliases   AliasConfig  `mapstructure:"aliases"`
+	APIKey     string       `mapstructure:"api_key"`
+	RESTAPIKey string       `mapstructure:"rest_api_key"`
+	Workspace  string       `mapstructure:"workspace"`
+	GitHub     GitHubConfig `mapstructure:"github"`
+	Aliases    AliasConfig  `mapstructure:"aliases"`
 }
 
 var v *viper.Viper
@@ -45,6 +46,7 @@ func Load() (*Config, error) {
 	// Bind environment variables (take precedence over config file)
 	v.SetEnvPrefix("")
 	_ = v.BindEnv("api_key", "ZH_API_KEY")
+	_ = v.BindEnv("rest_api_key", "ZH_REST_API_KEY")
 	_ = v.BindEnv("workspace", "ZH_WORKSPACE")
 	_ = v.BindEnv("github.token", "ZH_GITHUB_TOKEN")
 
@@ -84,6 +86,9 @@ func Write(cfg *Config) error {
 	v.SetConfigType("yaml")
 
 	v.Set("api_key", cfg.APIKey)
+	if cfg.RESTAPIKey != "" {
+		v.Set("rest_api_key", cfg.RESTAPIKey)
+	}
 	v.Set("workspace", cfg.Workspace)
 	v.Set("github.method", cfg.GitHub.Method)
 	if cfg.GitHub.Token != "" {

@@ -37,6 +37,14 @@ type RESTIssueRef struct {
 // ZenHub REST API v1. The epic is identified by the GitHub repository ID and
 // issue number of its backing GitHub issue.
 func (c *Client) UpdateEpicIssues(epicRepoID, epicIssueNumber int, addIssues, removeIssues []RESTIssueRef) error {
+	if c.restAPIKey == "" {
+		return exitcode.Generalf("legacy epic add/remove requires a ZenHub REST API token\n\n" +
+			"The ZenHub REST v1 API uses a different token than the GraphQL API.\n" +
+			"Generate one at https://app.zenhub.com/dashboard/tokens and set it via:\n" +
+			"  config: rest_api_key in config.yml\n" +
+			"  env:    ZH_REST_API_KEY")
+	}
+
 	body := map[string]any{}
 	if len(addIssues) > 0 {
 		body["add_issues"] = addIssues
@@ -63,7 +71,7 @@ func (c *Client) UpdateEpicIssues(epicRepoID, epicIssueNumber int, addIssues, re
 		return exitcode.General("creating request", err)
 	}
 
-	req.Header.Set("X-Authentication-Token", c.apiKey)
+	req.Header.Set("X-Authentication-Token", c.restAPIKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", userAgent)
 
@@ -84,7 +92,7 @@ func (c *Client) UpdateEpicIssues(epicRepoID, epicIssueNumber int, addIssues, re
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return exitcode.Auth("authentication failed — check your API key", nil)
+		return exitcode.Auth("REST API authentication failed — check your rest_api_key", nil)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

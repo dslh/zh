@@ -25,6 +25,7 @@ func setupEpicMutationTest(t *testing.T, ms *testutil.MockServer) {
 	t.Setenv("XDG_CACHE_HOME", cacheDir)
 	t.Setenv("XDG_CONFIG_HOME", configDir)
 	t.Setenv("ZH_API_KEY", "test-key")
+	t.Setenv("ZH_REST_API_KEY", "test-rest-key")
 	t.Setenv("ZH_WORKSPACE", "ws-123")
 	t.Setenv("ZH_GITHUB_TOKEN", "")
 

@@ -481,7 +481,7 @@ func fetchAllWorkspaces(client *api.Client) ([]workspaceNode, error) {
 		return nil, exitcode.General("parsing workspaces response", err)
 	}
 
-	var workspaces []workspaceNode
+	workspaces := make([]workspaceNode, 0)
 	for _, org := range resp.Viewer.ZenhubOrganizations.Nodes {
 		for _, ws := range org.Workspaces.Nodes {
 			ws.Organization = &orgNode{ID: org.ID, Name: org.Name}
@@ -767,7 +767,7 @@ func runWorkspaceListFavorites(client *api.Client, cfg *config.Config, cmd *cobr
 
 	w := cmd.OutOrStdout()
 
-	var workspaces []workspaceNode
+	workspaces := make([]workspaceNode, 0, len(resp.Viewer.WorkspaceFavorites.Nodes))
 	for _, fav := range resp.Viewer.WorkspaceFavorites.Nodes {
 		workspaces = append(workspaces, fav.Workspace)
 	}

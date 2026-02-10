@@ -65,7 +65,7 @@
 - [x] `zh sprint velocity`
 
 ## workspace
-- [ ] `zh workspace list`
+- [x] `zh workspace list`
 - [ ] `zh workspace show`
 - [ ] `zh workspace switch <workspace>`
 - [ ] `zh workspace repos`

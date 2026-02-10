@@ -8,6 +8,7 @@ import (
 
 	"github.com/dslh/zh/internal/api"
 	"github.com/dslh/zh/internal/cache"
+	"github.com/dslh/zh/internal/gh"
 	"github.com/dslh/zh/internal/resolve"
 	"github.com/dslh/zh/internal/testutil"
 )
@@ -32,6 +33,18 @@ func setupEpicMutationTest(t *testing.T, ms *testutil.MockServer) {
 		return api.New(apiKey, append(opts, api.WithEndpoint(ms.URL()))...)
 	}
 	t.Cleanup(func() { apiNewFunc = origNew })
+}
+
+// setupEpicMutationTestWithGitHub extends the base setup with a GitHub API mock.
+func setupEpicMutationTestWithGitHub(t *testing.T, ms *testutil.MockServer, ghMs *testutil.MockServer) {
+	t.Helper()
+	setupEpicMutationTest(t, ms)
+
+	origGh := ghNewFunc
+	ghNewFunc = func(method, token string, opts ...gh.Option) *gh.Client {
+		return gh.New("pat", "test-token", append(opts, gh.WithEndpoint(ghMs.URL()))...)
+	}
+	t.Cleanup(func() { ghNewFunc = origGh })
 }
 
 // --- epic create (ZenHub epic) ---
@@ -369,7 +382,100 @@ func TestEpicEditJSON(t *testing.T) {
 	}
 }
 
-func TestEpicEditLegacyError(t *testing.T) {
+func TestEpicEditLegacy(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ghMs := testutil.NewMockServer(t)
+
+	// GitHub mock: return issue node ID, then handle update mutation
+	ghMs.HandleQuery("GetGitHubIssue", ghIssueNodeResponse())
+	ghMs.HandleQuery("UpdateIssue", ghUpdateIssueResponse("New Title", "OPEN"))
+
+	setupEpicMutationTestWithGitHub(t, ms, ghMs)
+
+	// Pre-populate cache with legacy epic
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "edit", "Bug Tracker", "--title=New Title"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic edit on legacy epic returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Updated legacy epic") {
+		t.Errorf("output should confirm legacy epic update, got: %s", out)
+	}
+	if !strings.Contains(out, "Title:") {
+		t.Errorf("output should show title change, got: %s", out)
+	}
+}
+
+func TestEpicEditLegacyDryRun(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	setupEpicMutationTest(t, ms)
+
+	// Pre-populate cache with legacy epic
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	// ghNewFunc returns nil (no GitHub) — dry-run shouldn't need it
+	origGh := ghNewFunc
+	ghNewFunc = func(method, token string, opts ...gh.Option) *gh.Client {
+		return gh.New("pat", "test-token", opts...)
+	}
+	t.Cleanup(func() { ghNewFunc = origGh })
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "edit", "Bug Tracker", "--title=New Title", "--dry-run"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic edit dry-run on legacy epic returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Would update legacy epic") {
+		t.Errorf("output should show dry-run message, got: %s", out)
+	}
+}
+
+func TestEpicEditLegacyJSON(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ghMs := testutil.NewMockServer(t)
+	ghMs.HandleQuery("GetGitHubIssue", ghIssueNodeResponse())
+	ghMs.HandleQuery("UpdateIssue", ghUpdateIssueResponse("New Title", "OPEN"))
+	setupEpicMutationTestWithGitHub(t, ms, ghMs)
+
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "edit", "Bug Tracker", "--title=New Title"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic edit JSON on legacy epic returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if result["issue"] != "dlakehammond/task-tracker#1" {
+		t.Errorf("JSON should contain issue ref, got: %v", result["issue"])
+	}
+}
+
+func TestEpicEditLegacyNoGitHub(t *testing.T) {
 	ms := testutil.NewMockServer(t)
 	setupEpicMutationTest(t, ms)
 
@@ -385,10 +491,10 @@ func TestEpicEditLegacyError(t *testing.T) {
 
 	err := rootCmd.Execute()
 	if err == nil {
-		t.Fatal("epic edit on legacy epic should return error")
+		t.Fatal("epic edit on legacy epic without GitHub should return error")
 	}
-	if !strings.Contains(err.Error(), "legacy epic") {
-		t.Errorf("error should mention legacy epic, got: %v", err)
+	if !strings.Contains(err.Error(), "GitHub access is required") {
+		t.Errorf("error should mention GitHub access, got: %v", err)
 	}
 }
 
@@ -643,11 +749,126 @@ func TestEpicSetStateJSON(t *testing.T) {
 	}
 }
 
-func TestEpicSetStateLegacyError(t *testing.T) {
+func TestEpicSetStateLegacy(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ghMs := testutil.NewMockServer(t)
+	ghMs.HandleQuery("GetGitHubIssue", ghIssueNodeResponse())
+	ghMs.HandleQuery("UpdateIssue", ghUpdateIssueResponse("Bug Tracker Improvements", "CLOSED"))
+	setupEpicMutationTestWithGitHub(t, ms, ghMs)
+
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "set-state", "Bug Tracker", "closed"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic set-state on legacy epic returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Set state of legacy epic") {
+		t.Errorf("output should confirm state change, got: %s", out)
+	}
+	if !strings.Contains(out, "closed") {
+		t.Errorf("output should show new state, got: %s", out)
+	}
+}
+
+func TestEpicSetStateLegacyDryRun(t *testing.T) {
 	ms := testutil.NewMockServer(t)
 	setupEpicMutationTest(t, ms)
 
-	// Pre-populate cache with legacy epic
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	origGh := ghNewFunc
+	ghNewFunc = func(method, token string, opts ...gh.Option) *gh.Client {
+		return gh.New("pat", "test-token", opts...)
+	}
+	t.Cleanup(func() { ghNewFunc = origGh })
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "set-state", "Bug Tracker", "closed", "--dry-run"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic set-state dry-run on legacy epic returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Would set state of legacy epic") {
+		t.Errorf("output should show dry-run message, got: %s", out)
+	}
+}
+
+func TestEpicSetStateLegacyJSON(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ghMs := testutil.NewMockServer(t)
+	ghMs.HandleQuery("GetGitHubIssue", ghIssueNodeResponse())
+	ghMs.HandleQuery("UpdateIssue", ghUpdateIssueResponse("Bug Tracker Improvements", "CLOSED"))
+	setupEpicMutationTestWithGitHub(t, ms, ghMs)
+
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "set-state", "Bug Tracker", "closed"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic set-state JSON on legacy epic returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if result["state"] != "closed" {
+		t.Errorf("JSON should contain state=closed, got: %v", result["state"])
+	}
+}
+
+func TestEpicSetStateLegacyStateMapping(t *testing.T) {
+	// Test that non-closed states (todo, in_progress) map to GitHub OPEN
+	ms := testutil.NewMockServer(t)
+	ghMs := testutil.NewMockServer(t)
+	ghMs.HandleQuery("GetGitHubIssue", ghIssueNodeResponse())
+	ghMs.HandleQuery("UpdateIssue", ghUpdateIssueResponse("Bug Tracker Improvements", "OPEN"))
+	setupEpicMutationTestWithGitHub(t, ms, ghMs)
+
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "set-state", "Bug Tracker", "in_progress"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic set-state in_progress on legacy epic returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "open") {
+		t.Errorf("output should show mapped state (open), got: %s", out)
+	}
+	if !strings.Contains(out, "maps to open") {
+		t.Errorf("output should explain state mapping, got: %s", out)
+	}
+}
+
+func TestEpicSetStateLegacyNoGitHub(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	setupEpicMutationTest(t, ms)
+
 	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
 		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
 	})
@@ -659,14 +880,46 @@ func TestEpicSetStateLegacyError(t *testing.T) {
 
 	err := rootCmd.Execute()
 	if err == nil {
-		t.Fatal("epic set-state on legacy epic should return error")
+		t.Fatal("epic set-state on legacy epic without GitHub should return error")
 	}
-	if !strings.Contains(err.Error(), "legacy epic") {
-		t.Errorf("error should mention legacy epic, got: %v", err)
+	if !strings.Contains(err.Error(), "GitHub access is required") {
+		t.Errorf("error should mention GitHub access, got: %v", err)
 	}
 }
 
 // --- helpers ---
+
+// GitHub API mock responses for legacy epic operations.
+
+func ghIssueNodeResponse() map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"repository": map[string]any{
+				"issue": map[string]any{
+					"id":    "GH_ISSUE_NODE_123",
+					"title": "Bug Tracker Improvements",
+					"body":  "Original body",
+					"state": "OPEN",
+				},
+			},
+		},
+	}
+}
+
+func ghUpdateIssueResponse(title, state string) map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"updateIssue": map[string]any{
+				"issue": map[string]any{
+					"id":    "GH_ISSUE_NODE_123",
+					"title": title,
+					"body":  "Updated body",
+					"state": state,
+				},
+			},
+		},
+	}
+}
 
 func workspaceOrgResponse() map[string]any {
 	return map[string]any{

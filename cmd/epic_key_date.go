@@ -167,7 +167,8 @@ func runEpicKeyDateList(cmd *cobra.Command, args []string) error {
 	}
 
 	if resolved.Type == "legacy" {
-		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by a GitHub issue) — key dates are only supported for ZenHub epics", resolved.Title))
+		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by GitHub issue %s/%s#%d) — key dates are only supported for ZenHub epics",
+			resolved.Title, resolved.RepoOwner, resolved.RepoName, resolved.IssueNumber))
 	}
 
 	// Fetch key dates
@@ -245,7 +246,8 @@ func runEpicKeyDateAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	if resolved.Type == "legacy" {
-		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by a GitHub issue) — key dates are only supported for ZenHub epics", resolved.Title))
+		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by GitHub issue %s/%s#%d) — key dates are only supported for ZenHub epics",
+			resolved.Title, resolved.RepoOwner, resolved.RepoName, resolved.IssueNumber))
 	}
 
 	name := args[1]
@@ -334,7 +336,8 @@ func runEpicKeyDateRemove(cmd *cobra.Command, args []string) error {
 	}
 
 	if resolved.Type == "legacy" {
-		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by a GitHub issue) — key dates are only supported for ZenHub epics", resolved.Title))
+		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by GitHub issue %s/%s#%d) — key dates are only supported for ZenHub epics",
+			resolved.Title, resolved.RepoOwner, resolved.RepoName, resolved.IssueNumber))
 	}
 
 	name := args[1]

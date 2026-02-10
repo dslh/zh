@@ -221,7 +221,8 @@ func runEpicAssigneeOp(cmd *cobra.Command, args []string, op string, dryRun, con
 	}
 
 	if resolved.Type == "legacy" {
-		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by a GitHub issue) — managing assignees is only supported for ZenHub epics", resolved.Title))
+		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by GitHub issue %s/%s#%d) — managing assignees is only supported for ZenHub epics",
+			resolved.Title, resolved.RepoOwner, resolved.RepoName, resolved.IssueNumber))
 	}
 
 	// Resolve users
@@ -421,7 +422,8 @@ func runEpicLabelOp(cmd *cobra.Command, args []string, op string, dryRun, contin
 	}
 
 	if resolved.Type == "legacy" {
-		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by a GitHub issue) — managing labels is only supported for ZenHub epics", resolved.Title))
+		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by GitHub issue %s/%s#%d) — managing labels is only supported for ZenHub epics",
+			resolved.Title, resolved.RepoOwner, resolved.RepoName, resolved.IssueNumber))
 	}
 
 	// Resolve labels

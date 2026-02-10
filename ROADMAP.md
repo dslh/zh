@@ -467,9 +467,9 @@ Build the resolution layer now — almost every subsequent command depends on it
 
 ## Phase 17: Legacy epic support (deferred)
 
-- [ ] Detect epic type (ZenHub vs legacy) during resolution
-- [ ] `zh epic edit` for legacy epics via GitHub API
-- [ ] `zh epic set-state` for legacy epics via GitHub API
-- [ ] `zh epic add` / `zh epic remove` for legacy epics
-- [ ] Graceful error when GitHub access not configured
-- [ ] Tests: each operation for both epic types
+- [x] Detect epic type (ZenHub vs legacy) during resolution
+- [x] `zh epic edit` for legacy epics via GitHub API
+- [x] `zh epic set-state` for legacy epics via GitHub API
+- [ ] `zh epic add` / `zh epic remove` for legacy epics (blocked: ZenHub GraphQL API has no mutation for legacy epic child issues — would require REST API v1 support)
+- [x] Graceful error when GitHub access not configured
+- [x] Tests: each operation for both epic types

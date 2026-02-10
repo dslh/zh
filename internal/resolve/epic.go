@@ -27,6 +27,11 @@ type EpicResult struct {
 	ID    string
 	Title string
 	Type  string // "zenhub" or "legacy"
+
+	// Legacy epic fields — populated when Type is "legacy".
+	IssueNumber int
+	RepoName    string
+	RepoOwner   string
 }
 
 // EpicCacheKey returns the cache key for epic data scoped to a workspace.
@@ -324,6 +329,19 @@ func Epic(client *api.Client, workspaceID string, identifier string, aliases map
 	return nil, exitcode.NotFoundError(fmt.Sprintf("epic %q not found — run 'zh epic list' to see available epics", identifier))
 }
 
+// epicResultFromCache creates an EpicResult from a CachedEpic, carrying
+// legacy epic issue reference fields when applicable.
+func epicResultFromCache(e CachedEpic) *EpicResult {
+	return &EpicResult{
+		ID:          e.ID,
+		Title:       e.Title,
+		Type:        e.Type,
+		IssueNumber: e.IssueNumber,
+		RepoName:    e.RepoName,
+		RepoOwner:   e.RepoOwner,
+	}
+}
+
 // matchEpic attempts to match an epic by exact ID, exact title,
 // unique title substring, or owner/repo#number for legacy epics.
 func matchEpic(entries []CachedEpic, identifier string) (*EpicResult, bool) {
@@ -332,7 +350,7 @@ func matchEpic(entries []CachedEpic, identifier string) (*EpicResult, bool) {
 	// Exact ID match
 	for _, e := range entries {
 		if e.ID == identifier {
-			return &EpicResult{ID: e.ID, Title: e.Title, Type: e.Type}, true
+			return epicResultFromCache(e), true
 		}
 	}
 
@@ -347,7 +365,7 @@ func matchEpic(entries []CachedEpic, identifier string) (*EpicResult, bool) {
 			repoMatch := strings.EqualFold(e.RepoName, repo)
 			ownerMatch := owner == "" || strings.EqualFold(e.RepoOwner, owner)
 			if numMatch && repoMatch && ownerMatch {
-				return &EpicResult{ID: e.ID, Title: e.Title, Type: e.Type}, true
+				return epicResultFromCache(e), true
 			}
 		}
 	}
@@ -355,7 +373,7 @@ func matchEpic(entries []CachedEpic, identifier string) (*EpicResult, bool) {
 	// Exact title match (case-insensitive)
 	for _, e := range entries {
 		if strings.ToLower(e.Title) == idLower {
-			return &EpicResult{ID: e.ID, Title: e.Title, Type: e.Type}, true
+			return epicResultFromCache(e), true
 		}
 	}
 
@@ -367,7 +385,7 @@ func matchEpic(entries []CachedEpic, identifier string) (*EpicResult, bool) {
 		}
 	}
 	if len(matches) == 1 {
-		return &EpicResult{ID: matches[0].ID, Title: matches[0].Title, Type: matches[0].Type}, true
+		return epicResultFromCache(matches[0]), true
 	}
 
 	return nil, false

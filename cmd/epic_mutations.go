@@ -189,6 +189,69 @@ const epicEstimateQuery = `query GetZenhubEpicEstimate($id: ID!) {
   }
 }`
 
+// GitHub GraphQL queries/mutations for legacy epic operations.
+//
+// Legacy epics are backed by a GitHub issue — editing their title/body and
+// changing their open/closed state requires GitHub API access.
+
+const legacyEpicGitHubIssueQuery = `query GetGitHubIssue($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    issue(number: $number) {
+      id
+      title
+      body
+      state
+    }
+  }
+}`
+
+const legacyEpicUpdateIssueMutation = `mutation UpdateIssue($input: UpdateIssueInput!) {
+  updateIssue(input: $input) {
+    issue {
+      id
+      title
+      body
+      state
+    }
+  }
+}`
+
+// requireLegacyEpicGitHubID fetches the GitHub node ID for a legacy epic's
+// backing issue, which is needed for GitHub GraphQL mutations.
+func requireLegacyEpicGitHubID(ghClient *gh.Client, resolved *resolve.EpicResult) (string, error) {
+	data, err := ghClient.Execute(legacyEpicGitHubIssueQuery, map[string]any{
+		"owner":  resolved.RepoOwner,
+		"repo":   resolved.RepoName,
+		"number": resolved.IssueNumber,
+	})
+	if err != nil {
+		return "", exitcode.General("fetching GitHub issue for legacy epic", err)
+	}
+
+	var resp struct {
+		Repository struct {
+			Issue *struct {
+				ID string `json:"id"`
+			} `json:"issue"`
+		} `json:"repository"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return "", exitcode.General("parsing GitHub issue response", err)
+	}
+
+	if resp.Repository.Issue == nil {
+		return "", exitcode.NotFoundError(fmt.Sprintf("GitHub issue %s/%s#%d not found",
+			resolved.RepoOwner, resolved.RepoName, resolved.IssueNumber))
+	}
+
+	return resp.Repository.Issue.ID, nil
+}
+
+// legacyEpicRef returns the short issue reference for a legacy epic.
+func legacyEpicRef(resolved *resolve.EpicResult) string {
+	return fmt.Sprintf("%s/%s#%d", resolved.RepoOwner, resolved.RepoName, resolved.IssueNumber)
+}
+
 // Commands
 
 var epicCreateCmd = &cobra.Command{
@@ -660,7 +723,12 @@ func runEpicEdit(cmd *cobra.Command, args []string) error {
 	}
 
 	if resolved.Type == "legacy" {
-		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by a GitHub issue) — edit it via GitHub instead", resolved.Title))
+		ghClient := newGitHubClient(cfg, cmd)
+		if ghClient == nil {
+			return exitcode.Generalf("epic %q is a legacy epic (backed by GitHub issue %s/%s#%d) — GitHub access is required to edit it\n\nConfigure GitHub access with: zh",
+				resolved.Title, resolved.RepoOwner, resolved.RepoName, resolved.IssueNumber)
+		}
+		return runEpicEditLegacy(ghClient, w, resolved)
 	}
 
 	if epicEditDryRun {
@@ -733,6 +801,88 @@ func runEpicEdit(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// runEpicEditLegacy edits a legacy epic's title/body via the GitHub API.
+func runEpicEditLegacy(ghClient *gh.Client, w writerFlusher, resolved *resolve.EpicResult) error {
+	ref := legacyEpicRef(resolved)
+
+	if epicEditDryRun {
+		msg := fmt.Sprintf("Would update legacy epic %q (%s) via GitHub.", resolved.Title, ref)
+		var details []output.DetailLine
+		if epicEditTitle != "" {
+			details = append(details, output.DetailLine{Key: "Title", Value: epicEditTitle})
+		}
+		if epicEditBody != "" {
+			body := epicEditBody
+			if len(body) > 60 {
+				body = body[:57] + "..."
+			}
+			details = append(details, output.DetailLine{Key: "Body", Value: body})
+		}
+		output.MutationDryRunDetail(w, msg, details)
+		return nil
+	}
+
+	// Get the GitHub node ID
+	ghNodeID, err := requireLegacyEpicGitHubID(ghClient, resolved)
+	if err != nil {
+		return err
+	}
+
+	input := map[string]any{
+		"id": ghNodeID,
+	}
+	if epicEditTitle != "" {
+		input["title"] = epicEditTitle
+	}
+	if epicEditBody != "" {
+		input["body"] = epicEditBody
+	}
+
+	data, err := ghClient.Execute(legacyEpicUpdateIssueMutation, map[string]any{
+		"input": input,
+	})
+	if err != nil {
+		return exitcode.General("updating legacy epic via GitHub", err)
+	}
+
+	var resp struct {
+		UpdateIssue struct {
+			Issue struct {
+				ID    string `json:"id"`
+				Title string `json:"title"`
+				Body  string `json:"body"`
+				State string `json:"state"`
+			} `json:"issue"`
+		} `json:"updateIssue"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return exitcode.General("parsing GitHub update issue response", err)
+	}
+
+	updated := resp.UpdateIssue.Issue
+
+	if output.IsJSON(outputFormat) {
+		return output.JSON(w, map[string]any{
+			"id":    resolved.ID,
+			"issue": ref,
+			"title": updated.Title,
+			"body":  updated.Body,
+			"state": updated.State,
+		})
+	}
+
+	output.MutationSingle(w, output.Green(fmt.Sprintf("Updated legacy epic %q (%s).", updated.Title, ref)))
+	fmt.Fprintln(w)
+	if epicEditTitle != "" {
+		fmt.Fprintf(w, "  Title: %s\n", updated.Title)
+	}
+	if epicEditBody != "" {
+		fmt.Fprintf(w, "  Body:  updated\n")
+	}
+
+	return nil
+}
+
 // runEpicDelete implements `zh epic delete <epic>`.
 func runEpicDelete(cmd *cobra.Command, args []string) error {
 	cfg, err := requireWorkspace()
@@ -750,7 +900,8 @@ func runEpicDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	if resolved.Type == "legacy" {
-		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by a GitHub issue) — delete it via GitHub instead", resolved.Title))
+		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by GitHub issue %s/%s#%d) — delete it via GitHub instead",
+			resolved.Title, resolved.RepoOwner, resolved.RepoName, resolved.IssueNumber))
 	}
 
 	// Fetch child issue count for informational output
@@ -857,7 +1008,12 @@ func runEpicSetState(cmd *cobra.Command, args []string) error {
 	}
 
 	if resolved.Type == "legacy" {
-		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by a GitHub issue) — change its state via GitHub instead", resolved.Title))
+		ghClient := newGitHubClient(cfg, cmd)
+		if ghClient == nil {
+			return exitcode.Generalf("epic %q is a legacy epic (backed by GitHub issue %s/%s#%d) — GitHub access is required to change its state\n\nConfigure GitHub access with: zh",
+				resolved.Title, resolved.RepoOwner, resolved.RepoName, resolved.IssueNumber)
+		}
+		return runEpicSetStateLegacy(ghClient, w, resolved, graphqlState)
 	}
 
 	if epicSetStateDryRun {
@@ -910,6 +1066,79 @@ func runEpicSetState(cmd *cobra.Command, args []string) error {
 	output.MutationSingle(w, output.Green(fmt.Sprintf("Set state of epic %q to %s.", updated.Title, formatEpicState(updated.State))))
 	if epicSetStateApplyToIssues {
 		fmt.Fprintln(w, "Also applied state change to child issues.")
+	}
+
+	return nil
+}
+
+// runEpicSetStateLegacy changes the state of a legacy epic via the GitHub API.
+// Legacy epic state maps to GitHub issue state: CLOSED means closed, anything
+// else means open. The --apply-to-issues flag is not supported for legacy epics.
+func runEpicSetStateLegacy(ghClient *gh.Client, w writerFlusher, resolved *resolve.EpicResult, graphqlState string) error {
+	ref := legacyEpicRef(resolved)
+
+	// Map ZenHub epic states to GitHub issue states
+	ghState := "OPEN"
+	if graphqlState == "CLOSED" {
+		ghState = "CLOSED"
+	}
+
+	if epicSetStateApplyToIssues {
+		fmt.Fprintln(w, output.Yellow("Warning: --apply-to-issues is not supported for legacy epics."))
+	}
+
+	if epicSetStateDryRun {
+		msg := fmt.Sprintf("Would set state of legacy epic %q (%s) to %s via GitHub.", resolved.Title, ref, strings.ToLower(ghState))
+		if ghState == "OPEN" && graphqlState != "OPEN" {
+			msg += fmt.Sprintf("\nNote: GitHub issues only support open/closed — %q maps to open.", strings.ToLower(graphqlState))
+		}
+		output.MutationDryRunDetail(w, msg, nil)
+		return nil
+	}
+
+	// Get the GitHub node ID
+	ghNodeID, err := requireLegacyEpicGitHubID(ghClient, resolved)
+	if err != nil {
+		return err
+	}
+
+	data, err := ghClient.Execute(legacyEpicUpdateIssueMutation, map[string]any{
+		"input": map[string]any{
+			"id":    ghNodeID,
+			"state": ghState,
+		},
+	})
+	if err != nil {
+		return exitcode.General("updating legacy epic state via GitHub", err)
+	}
+
+	var resp struct {
+		UpdateIssue struct {
+			Issue struct {
+				ID    string `json:"id"`
+				Title string `json:"title"`
+				State string `json:"state"`
+			} `json:"issue"`
+		} `json:"updateIssue"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return exitcode.General("parsing GitHub update issue response", err)
+	}
+
+	updated := resp.UpdateIssue.Issue
+
+	if output.IsJSON(outputFormat) {
+		return output.JSON(w, map[string]any{
+			"id":    resolved.ID,
+			"issue": ref,
+			"title": updated.Title,
+			"state": strings.ToLower(updated.State),
+		})
+	}
+
+	output.MutationSingle(w, output.Green(fmt.Sprintf("Set state of legacy epic %q (%s) to %s.", updated.Title, ref, strings.ToLower(updated.State))))
+	if ghState == "OPEN" && graphqlState != "OPEN" {
+		fmt.Fprintf(w, "Note: GitHub issues only support open/closed — %q maps to open.\n", strings.ToLower(graphqlState))
 	}
 
 	return nil
@@ -1288,7 +1517,8 @@ func runEpicAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	if resolved.Type == "legacy" {
-		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by a GitHub issue) — adding issues is only supported for ZenHub epics", resolved.Title))
+		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by GitHub issue %s/%s#%d) — adding child issues to legacy epics is not supported via the API\n\nUse the ZenHub web UI to manage child issues, or convert to a ZenHub epic",
+			resolved.Title, resolved.RepoOwner, resolved.RepoName, resolved.IssueNumber))
 	}
 
 	// Resolve issue identifiers
@@ -1425,7 +1655,8 @@ func runEpicRemove(cmd *cobra.Command, args []string) error {
 	}
 
 	if resolved.Type == "legacy" {
-		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by a GitHub issue) — removing issues is only supported for ZenHub epics", resolved.Title))
+		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by GitHub issue %s/%s#%d) — removing child issues from legacy epics is not supported via the API\n\nUse the ZenHub web UI to manage child issues, or convert to a ZenHub epic",
+			resolved.Title, resolved.RepoOwner, resolved.RepoName, resolved.IssueNumber))
 	}
 
 	// Handle --all flag
@@ -1697,7 +1928,8 @@ func runEpicEstimate(cmd *cobra.Command, args []string) error {
 	}
 
 	if resolved.Type == "legacy" {
-		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by a GitHub issue) — setting estimates is only supported for ZenHub epics", resolved.Title))
+		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by GitHub issue %s/%s#%d) — setting estimates is only supported for ZenHub epics",
+			resolved.Title, resolved.RepoOwner, resolved.RepoName, resolved.IssueNumber))
 	}
 
 	// Fetch current estimate for dry-run context

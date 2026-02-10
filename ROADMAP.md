@@ -202,10 +202,10 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] Tests: single move, batch move, position flag, dry run, stop-on-error, continue-on-error with partial failure
 
 ### `zh issue estimate <issue> <value>`
-- [ ] Resolve issue, set estimate (omit value to clear)
-- [ ] Validate estimate against cached valid values
-- [ ] `--dry-run` support
-- [ ] Tests: set, clear, invalid estimate
+- [x] Resolve issue, set estimate (omit value to clear)
+- [x] Validate estimate against cached valid values
+- [x] `--dry-run` support
+- [x] Tests: set, clear, invalid estimate
 
 ### `zh issue close <issue>...`
 - [ ] Resolve issue(s), close via API

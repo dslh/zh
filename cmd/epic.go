@@ -395,7 +395,7 @@ The epic can be specified as:
 }
 
 var epicShowCmd = &cobra.Command{
-	Use:   "show <epic>",
+	Use:   "show [epic]",
 	Short: "View epic details",
 	Long: `Display detailed information about a single epic.
 
@@ -403,8 +403,10 @@ The epic can be specified as:
   - ZenHub ID
   - exact title or unique title substring
   - owner/repo#number (for legacy epics)
-  - an alias set with 'zh epic alias'`,
-	Args: cobra.ExactArgs(1),
+  - an alias set with 'zh epic alias'
+
+Use --interactive to select an epic from a list.`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: runEpicShow,
 }
 
@@ -412,8 +414,9 @@ var (
 	epicListLimit int
 	epicListAll   bool
 
-	epicShowLimit int
-	epicShowAll   bool
+	epicShowLimit       int
+	epicShowAll         bool
+	epicShowInteractive bool
 )
 
 func init() {
@@ -422,6 +425,7 @@ func init() {
 
 	epicShowCmd.Flags().IntVar(&epicShowLimit, "limit", 100, "Maximum number of child issues to show")
 	epicShowCmd.Flags().BoolVar(&epicShowAll, "all", false, "Show all child issues (ignore --limit)")
+	epicShowCmd.Flags().BoolVarP(&epicShowInteractive, "interactive", "i", false, "Select an epic from a list")
 
 	epicCmd.AddCommand(epicListCmd)
 	epicCmd.AddCommand(epicShowCmd)
@@ -434,6 +438,7 @@ func resetEpicFlags() {
 	epicListAll = false
 	epicShowLimit = 100
 	epicShowAll = false
+	epicShowInteractive = false
 }
 
 // runEpicList implements `zh epic list`.
@@ -691,7 +696,7 @@ func cacheEpicsFromList(epics []epicListEntry, workspaceID string) {
 	_ = resolve.FetchEpicsIntoCache(entries, workspaceID)
 }
 
-// runEpicShow implements `zh epic show <epic>`.
+// runEpicShow implements `zh epic show [epic]`.
 func runEpicShow(cmd *cobra.Command, args []string) error {
 	cfg, err := requireWorkspace()
 	if err != nil {
@@ -701,8 +706,23 @@ func runEpicShow(cmd *cobra.Command, args []string) error {
 	client := newClient(cfg, cmd)
 	w := cmd.OutOrStdout()
 
+	var identifier string
+	if epicShowInteractive {
+		identifier, err = interactiveOrArg(cmd, nil, true, func() ([]selectItem, error) {
+			return fetchEpicSelectItems(client, cfg.Workspace)
+		}, "Select an epic")
+		if err != nil {
+			return err
+		}
+	} else {
+		if len(args) < 1 {
+			return exitcode.Usage("requires an epic argument or --interactive flag")
+		}
+		identifier = args[0]
+	}
+
 	// Resolve the epic
-	resolved, err := resolve.Epic(client, cfg.Workspace, args[0], cfg.Aliases.Epics)
+	resolved, err := resolve.Epic(client, cfg.Workspace, identifier, cfg.Aliases.Epics)
 	if err != nil {
 		return err
 	}
@@ -717,6 +737,28 @@ func runEpicShow(cmd *cobra.Command, args []string) error {
 		// Unknown type — try zenhub first, fall back to legacy
 		return runEpicShowZenhub(client, cfg.Workspace, resolved.ID, w)
 	}
+}
+
+// fetchEpicSelectItems fetches epics and converts them to selectItems for interactive mode.
+func fetchEpicSelectItems(client *api.Client, workspaceID string) ([]selectItem, error) {
+	epics, _, err := fetchEpicList(client, workspaceID, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]selectItem, len(epics))
+	for i, e := range epics {
+		desc := e.State
+		if e.IssueCountProgress.Total > 0 {
+			desc += fmt.Sprintf(" · %d/%d issues", e.IssueCountProgress.Closed, e.IssueCountProgress.Total)
+		}
+		items[i] = selectItem{
+			id:          e.ID,
+			title:       e.Title,
+			description: desc,
+		}
+	}
+	return items, nil
 }
 
 // runEpicShowZenhub renders a ZenHub epic detail view.

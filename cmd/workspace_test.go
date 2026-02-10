@@ -18,6 +18,7 @@ func resetWorkspaceFlags() {
 	workspaceReposGitHub = false
 	workspaceStatsSprints = 6
 	workspaceStatsDays = 30
+	workspaceShowInteractive = false
 }
 
 // --- workspace list ---

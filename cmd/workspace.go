@@ -337,11 +337,12 @@ var workspaceCmd = &cobra.Command{
 }
 
 var (
-	workspaceListFavorites bool
-	workspaceListRecent    bool
-	workspaceReposGitHub   bool
-	workspaceStatsSprints  int
-	workspaceStatsDays     int
+	workspaceListFavorites   bool
+	workspaceListRecent      bool
+	workspaceReposGitHub     bool
+	workspaceStatsSprints    int
+	workspaceStatsDays       int
+	workspaceShowInteractive bool
 )
 
 var workspaceListCmd = &cobra.Command{
@@ -354,9 +355,11 @@ var workspaceListCmd = &cobra.Command{
 var workspaceShowCmd = &cobra.Command{
 	Use:   "show [name]",
 	Short: "Show workspace details",
-	Long:  `Display details about a workspace. Defaults to the current workspace if no name is given.`,
-	Args:  cobra.MaximumNArgs(1),
-	RunE:  runWorkspaceShow,
+	Long: `Display details about a workspace. Defaults to the current workspace if no name is given.
+
+Use --interactive to select a workspace from a list.`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runWorkspaceShow,
 }
 
 var workspaceSwitchCmd = &cobra.Command{
@@ -385,6 +388,8 @@ func init() {
 	workspaceListCmd.Flags().BoolVar(&workspaceListFavorites, "favorites", false, "Show only favorited workspaces")
 	workspaceListCmd.Flags().BoolVar(&workspaceListRecent, "recent", false, "Show recently viewed workspaces")
 	workspaceListCmd.MarkFlagsMutuallyExclusive("favorites", "recent")
+
+	workspaceShowCmd.Flags().BoolVarP(&workspaceShowInteractive, "interactive", "i", false, "Select a workspace from a list")
 
 	workspaceReposCmd.Flags().BoolVar(&workspaceReposGitHub, "github", false, "Include description, language, and stars from GitHub")
 
@@ -815,7 +820,15 @@ func runWorkspaceShow(cmd *cobra.Command, args []string) error {
 
 	// Determine workspace ID
 	workspaceID := cfg.Workspace
-	if len(args) > 0 {
+	if workspaceShowInteractive {
+		identifier, err := interactiveOrArg(cmd, nil, true, func() ([]selectItem, error) {
+			return fetchWorkspaceSelectItems(client)
+		}, "Select a workspace")
+		if err != nil {
+			return err
+		}
+		workspaceID = identifier
+	} else if len(args) > 0 {
 		ws, err := resolveWorkspaceOrAmbiguous(client, args[0])
 		if err != nil {
 			return err
@@ -941,6 +954,34 @@ func runWorkspaceShow(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// fetchWorkspaceSelectItems fetches workspaces and converts them to selectItems for interactive mode.
+func fetchWorkspaceSelectItems(client *api.Client) ([]selectItem, error) {
+	workspaces, err := fetchAllWorkspaces(client)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]selectItem, len(workspaces))
+	for i, ws := range workspaces {
+		desc := ""
+		if ws.Organization != nil {
+			desc = ws.Organization.Name
+		}
+		if ws.ReposConnection != nil {
+			if desc != "" {
+				desc += " · "
+			}
+			desc += fmt.Sprintf("%d repos", ws.ReposConnection.TotalCount)
+		}
+		items[i] = selectItem{
+			id:          ws.ID,
+			title:       ws.DisplayName,
+			description: desc,
+		}
+	}
+	return items, nil
 }
 
 // cacheReposFromDetail stores repo data from workspace detail in the cache.

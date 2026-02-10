@@ -286,11 +286,14 @@ var pipelineListCmd = &cobra.Command{
 }
 
 var pipelineShowCmd = &cobra.Command{
-	Use:   "show <name>",
+	Use:   "show [name]",
 	Short: "View details about a pipeline and the issues in it",
-	Long:  `Display pipeline details including configuration and issues. Resolve pipeline by name, substring, alias, or ID.`,
-	Args:  cobra.ExactArgs(1),
-	RunE:  runPipelineShow,
+	Long: `Display pipeline details including configuration and issues.
+Resolve pipeline by name, substring, alias, or ID.
+
+Use --interactive to select a pipeline from a list.`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runPipelineShow,
 }
 
 var pipelineAutomationsCmd = &cobra.Command{
@@ -302,13 +305,15 @@ var pipelineAutomationsCmd = &cobra.Command{
 }
 
 var (
-	pipelineShowLimit int
-	pipelineShowAll   bool
+	pipelineShowLimit       int
+	pipelineShowAll         bool
+	pipelineShowInteractive bool
 )
 
 func init() {
 	pipelineShowCmd.Flags().IntVar(&pipelineShowLimit, "limit", 100, "Maximum number of issues to show")
 	pipelineShowCmd.Flags().BoolVar(&pipelineShowAll, "all", false, "Show all issues (ignore --limit)")
+	pipelineShowCmd.Flags().BoolVarP(&pipelineShowInteractive, "interactive", "i", false, "Select a pipeline from a list")
 
 	pipelineCmd.AddCommand(pipelineListCmd)
 	pipelineCmd.AddCommand(pipelineShowCmd)
@@ -406,8 +411,23 @@ func runPipelineShow(cmd *cobra.Command, args []string) error {
 	client := newClient(cfg, cmd)
 	w := cmd.OutOrStdout()
 
+	var identifier string
+	if pipelineShowInteractive {
+		identifier, err = interactiveOrArg(cmd, nil, true, func() ([]selectItem, error) {
+			return fetchPipelineSelectItems(client, cfg.Workspace)
+		}, "Select a pipeline")
+		if err != nil {
+			return err
+		}
+	} else {
+		if len(args) < 1 {
+			return exitcode.Usage("requires a pipeline name or --interactive flag")
+		}
+		identifier = args[0]
+	}
+
 	// Resolve the pipeline
-	resolved, err := resolve.Pipeline(client, cfg.Workspace, args[0], cfg.Aliases.Pipelines)
+	resolved, err := resolve.Pipeline(client, cfg.Workspace, identifier, cfg.Aliases.Pipelines)
 	if err != nil {
 		return err
 	}
@@ -534,6 +554,42 @@ func runPipelineShow(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// fetchPipelineSelectItems fetches pipelines and converts them to selectItems for interactive mode.
+func fetchPipelineSelectItems(client *api.Client, workspaceID string) ([]selectItem, error) {
+	data, err := client.Execute(listPipelinesFullQuery, map[string]any{
+		"workspaceId": workspaceID,
+	})
+	if err != nil {
+		return nil, exitcode.General("fetching pipelines", err)
+	}
+
+	var resp struct {
+		Workspace struct {
+			PipelinesConnection struct {
+				Nodes []pipelineListEntry `json:"nodes"`
+			} `json:"pipelinesConnection"`
+		} `json:"workspace"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, exitcode.General("parsing pipelines response", err)
+	}
+
+	pipelines := resp.Workspace.PipelinesConnection.Nodes
+	items := make([]selectItem, len(pipelines))
+	for i, p := range pipelines {
+		desc := fmt.Sprintf("%d issues", p.Issues.TotalCount)
+		if p.Stage != nil && *p.Stage != "" {
+			desc += " · " + formatStage(*p.Stage)
+		}
+		items[i] = selectItem{
+			id:          p.ID,
+			title:       p.Name,
+			description: desc,
+		}
+	}
+	return items, nil
 }
 
 // fetchPipelineIssues fetches issues in a pipeline with pagination.

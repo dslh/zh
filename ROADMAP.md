@@ -190,7 +190,7 @@ Build the resolution layer now — almost every subsequent command depends on it
 ### `zh issue show <issue>`
 - [x] Resolve issue identifier
 - [x] Display: title, state, body, estimate, pipeline, assignees, labels, connected PRs, blockers, priority
-- [ ] `--interactive` mode: list issues, select one
+- [x] `--interactive` mode: list issues, select one
 - [x] With GitHub access: include author, reactions, PR review/merge/CI status
 - [x] Tests: full detail output, without GitHub access, interactive mode
 
@@ -283,7 +283,7 @@ Build the resolution layer now — almost every subsequent command depends on it
 
 ### `zh epic show <epic>`
 - [x] Resolve epic, display: title, state, body, dates, child issues, assignees, labels, estimate
-- [ ] `--interactive` mode
+- [x] `--interactive` mode
 - [x] Tests: full output, interactive
 
 ### `zh epic create <title>`
@@ -387,7 +387,7 @@ Build the resolution layer now — almost every subsequent command depends on it
 ### `zh sprint show [sprint]`
 - [x] Default to active sprint
 - [x] Display: name, dates, issues with estimates and pipeline
-- [ ] `--interactive` mode
+- [x] `--interactive` mode
 - [x] Tests: active sprint, named sprint, no active sprint
 
 ### `zh sprint add <issue>...`
@@ -446,10 +446,10 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] Tests: mock API responses, verify config file output
 
 ### Interactive selection
-- [ ] Bubble Tea list component for entity selection
-- [ ] Wire `--interactive` to `pipeline show`, `issue show`, `epic show`, `sprint show`, `workspace show`
-- [ ] Handle terminal detection (disable interactive in non-TTY)
-- [ ] Tests: non-TTY falls back gracefully
+- [x] Bubble Tea list component for entity selection
+- [x] Wire `--interactive` to `pipeline show`, `issue show`, `epic show`, `sprint show`, `workspace show`
+- [x] Handle terminal detection (disable interactive in non-TTY)
+- [x] Tests: non-TTY falls back gracefully
 
 ## Phase 16: Shell completions & distribution
 

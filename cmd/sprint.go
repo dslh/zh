@@ -248,7 +248,9 @@ Defaults to the active sprint if no sprint identifier is provided.
 The sprint can be specified as:
   - ZenHub ID
   - sprint name or unique name substring
-  - relative reference: current, next, previous`,
+  - relative reference: current, next, previous
+
+Use --interactive to select a sprint from a list.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runSprintShow,
 }
@@ -258,8 +260,9 @@ var (
 	sprintListAll   bool
 	sprintListState string
 
-	sprintShowLimit int
-	sprintShowAll   bool
+	sprintShowLimit       int
+	sprintShowAll         bool
+	sprintShowInteractive bool
 )
 
 func init() {
@@ -267,6 +270,7 @@ func init() {
 	sprintListCmd.Flags().StringVar(&sprintListState, "state", "", "Filter by state: open, closed, all (default: recent)")
 
 	output.AddPaginationFlags(sprintShowCmd, &sprintShowLimit, &sprintShowAll)
+	sprintShowCmd.Flags().BoolVarP(&sprintShowInteractive, "interactive", "i", false, "Select a sprint from a list")
 
 	sprintCmd.AddCommand(sprintListCmd)
 	sprintCmd.AddCommand(sprintShowCmd)
@@ -279,6 +283,7 @@ func resetSprintFlags() {
 	sprintListState = ""
 	sprintShowLimit = 100
 	sprintShowAll = false
+	sprintShowInteractive = false
 }
 
 // runSprintList implements `zh sprint list`.
@@ -451,10 +456,21 @@ func runSprintShow(cmd *cobra.Command, args []string) error {
 	client := newClient(cfg, cmd)
 	w := cmd.OutOrStdout()
 
-	// Resolve sprint — default to "current" if no argument provided
-	identifier := "current"
-	if len(args) > 0 {
-		identifier = args[0]
+	// Interactive mode: fetch sprint list and let the user pick one
+	var identifier string
+	if sprintShowInteractive {
+		identifier, err = interactiveOrArg(cmd, nil, true, func() ([]selectItem, error) {
+			return fetchSprintSelectItems(client, cfg.Workspace)
+		}, "Select a sprint")
+		if err != nil {
+			return err
+		}
+	} else {
+		// Default to "current" if no argument provided
+		identifier = "current"
+		if len(args) > 0 {
+			identifier = args[0]
+		}
 	}
 
 	resolved, err := resolve.Sprint(client, cfg.Workspace, identifier)
@@ -531,6 +547,32 @@ func runSprintShow(cmd *cobra.Command, args []string) error {
 	}
 
 	return renderSprintDetail(w, sprint)
+}
+
+// fetchSprintSelectItems fetches sprints and converts them to selectItems for interactive mode.
+func fetchSprintSelectItems(client *api.Client, workspaceID string) ([]selectItem, error) {
+	sprints, activeID, _, err := fetchSprintList(client, workspaceID, 0, "")
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]selectItem, len(sprints))
+	for i, s := range sprints {
+		desc := strings.ToLower(s.State)
+		if s.ID == activeID {
+			desc = "active"
+		}
+		dates := formatSprintDates(s.StartAt, s.EndAt)
+		if dates != "" {
+			desc += " · " + dates
+		}
+		items[i] = selectItem{
+			id:          s.ID,
+			title:       s.DisplayName(),
+			description: desc,
+		}
+	}
+	return items, nil
 }
 
 // renderSprintDetail renders the sprint detail view.

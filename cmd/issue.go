@@ -508,7 +508,7 @@ Issues are fetched from each pipeline in parallel.`,
 }
 
 var issueShowCmd = &cobra.Command{
-	Use:   "show <issue>",
+	Use:   "show [issue]",
 	Short: "View issue details",
 	Long: `Display detailed information about a single issue or PR.
 
@@ -516,8 +516,10 @@ The issue can be specified as:
   - repo#number (e.g. mpt#1234)
   - owner/repo#number (e.g. gohiring/mpt#1234)
   - ZenHub ID
-  - bare number with --repo flag`,
-	Args: cobra.ExactArgs(1),
+  - bare number with --repo flag
+
+Use --interactive to select an issue from a list.`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: runIssueShow,
 }
 
@@ -536,7 +538,8 @@ var (
 	issueListLimit      int
 	issueListAll        bool
 
-	issueShowRepo string
+	issueShowRepo        string
+	issueShowInteractive bool
 )
 
 func init() {
@@ -555,6 +558,7 @@ func init() {
 	issueListCmd.Flags().BoolVar(&issueListAll, "all", false, "Fetch all results (ignore --limit)")
 
 	issueShowCmd.Flags().StringVar(&issueShowRepo, "repo", "", "Repository context for bare issue numbers")
+	issueShowCmd.Flags().BoolVarP(&issueShowInteractive, "interactive", "i", false, "Select an issue from a list")
 
 	issueCmd.AddCommand(issueListCmd)
 	issueCmd.AddCommand(issueShowCmd)
@@ -576,6 +580,7 @@ func resetIssueFlags() {
 	issueListLimit = 100
 	issueListAll = false
 	issueShowRepo = ""
+	issueShowInteractive = false
 }
 
 // runIssueList implements `zh issue list`.
@@ -1121,6 +1126,21 @@ func runIssueShow(cmd *cobra.Command, args []string) error {
 	ghClient := newGitHubClient(cfg, cmd)
 	w := cmd.OutOrStdout()
 
+	// Interactive mode: fetch issue list and let the user pick one
+	if issueShowInteractive {
+		identifier, err := interactiveOrArg(cmd, nil, true, func() ([]selectItem, error) {
+			return fetchIssueSelectItems(client, cfg)
+		}, "Select an issue")
+		if err != nil {
+			return err
+		}
+		return runIssueShowByNode(client, ghClient, cfg.Workspace, identifier, w)
+	}
+
+	if len(args) < 1 {
+		return exitcode.Usage("requires an issue argument or --interactive flag")
+	}
+
 	// Parse the identifier to determine query strategy
 	parsed, parseErr := resolve.ParseIssueRef(args[0])
 
@@ -1139,6 +1159,62 @@ func runIssueShow(cmd *cobra.Command, args []string) error {
 	}
 
 	return runIssueShowByInfo(client, ghClient, cfg.Workspace, resolved.RepoGhID, resolved.Number, w)
+}
+
+// fetchIssueSelectItems fetches issues and converts them to selectItems for interactive mode.
+func fetchIssueSelectItems(client *api.Client, cfg *config.Config) ([]selectItem, error) {
+	// Fetch all pipeline IDs
+	pipelines, err := fetchPipelineIDsForList(client, cfg.Workspace)
+	if err != nil {
+		return nil, err
+	}
+
+	// Fetch issues from all pipelines in parallel
+	type pipelineResult struct {
+		issues []issueListNode
+		err    error
+	}
+	results := make([]pipelineResult, len(pipelines))
+	var wg sync.WaitGroup
+	for i, p := range pipelines {
+		wg.Add(1)
+		go func(idx int, pipelineID string) {
+			defer wg.Done()
+			issues, _, err := fetchIssuesByPipeline(client, pipelineID, cfg.Workspace, nil, 100)
+			results[idx] = pipelineResult{issues: issues, err: err}
+		}(i, p.ID)
+	}
+	wg.Wait()
+
+	var allIssues []issueListNode
+	for _, r := range results {
+		if r.err != nil {
+			return nil, r.err
+		}
+		allIssues = append(allIssues, r.issues...)
+	}
+
+	needLongRef := issueListRepoNamesAmbiguous(allIssues)
+	items := make([]selectItem, len(allIssues))
+	for i, issue := range allIssues {
+		ref := issueListFormatRef(issue, needLongRef)
+		desc := ""
+		if issue.PipelineIssue != nil {
+			desc = issue.PipelineIssue.Pipeline.Name
+		}
+		if issue.Estimate != nil {
+			if desc != "" {
+				desc += " · "
+			}
+			desc += formatEstimate(issue.Estimate.Value) + "pts"
+		}
+		items[i] = selectItem{
+			id:          issue.ID,
+			title:       fmt.Sprintf("%s %s", ref, issue.Title),
+			description: desc,
+		}
+	}
+	return items, nil
 }
 
 // runIssueShowByInfo fetches issue details using repo GH ID and issue number.

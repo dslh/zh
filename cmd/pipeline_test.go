@@ -15,6 +15,7 @@ import (
 func resetPipelineFlags() {
 	pipelineShowLimit = 100
 	pipelineShowAll = false
+	pipelineShowInteractive = false
 }
 
 // --- pipeline list ---

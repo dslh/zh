@@ -19,7 +19,7 @@
 - [x] `zh epic progress <epic>`
 - [x] `zh epic add <epic> <issue>...`
 - [x] `zh epic remove <epic> <issue>...`
-- [ ] `zh epic assignee <epic>`
+- [x] `zh epic assignee <epic>`
 - [ ] `zh epic label <epic>`
 - [ ] `zh epic key-date <epic>`
 - [ ] `zh epic alias <name> <epic>`

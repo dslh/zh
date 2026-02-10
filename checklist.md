@@ -11,7 +11,7 @@
 - [x] `zh epic list`
 - [x] `zh epic show <epic>`
 - [x] `zh epic create`
-- [ ] `zh epic edit <epic>`
+- [x] `zh epic edit <epic>`
 - [ ] `zh epic delete <epic>`
 - [ ] `zh epic set-state <epic> <state>`
 - [ ] `zh epic set-dates <epic>`

@@ -7,15 +7,15 @@ import (
 
 // MutationItem represents an item affected by a mutation.
 type MutationItem struct {
-	Ref     string // e.g. "mpt#1234"
-	Title   string // e.g. "Fix login button alignment"
-	Context string // e.g. "(currently in \"Backlog\")" for dry-run
+	Ref     string `json:"ref"`               // e.g. "mpt#1234"
+	Title   string `json:"title"`             // e.g. "Fix login button alignment"
+	Context string `json:"context,omitempty"` // e.g. "(currently in \"Backlog\")" for dry-run
 }
 
 // FailedItem represents an item that failed during a mutation.
 type FailedItem struct {
-	Ref    string // e.g. "api#568"
-	Reason string // e.g. "Permission denied"
+	Ref    string `json:"ref"`    // e.g. "api#568"
+	Reason string `json:"reason"` // e.g. "Permission denied"
 }
 
 // MutationSingle prints a single-item confirmation.

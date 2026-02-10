@@ -27,7 +27,7 @@
 ## issue
 - [x] `zh issue list`
 - [x] `zh issue show <issue>`
-- [ ] `zh issue move <issue>... <pipeline>`
+- [x] `zh issue move <issue>... <pipeline>`
 - [ ] `zh issue estimate <issue>`
 - [ ] `zh issue priority <issue>`
 - [ ] `zh issue label <issue>`

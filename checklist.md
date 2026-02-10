@@ -46,7 +46,7 @@
 ## pipeline
 - [x] `zh pipeline list`
 - [x] `zh pipeline show <pipeline>`
-- [ ] `zh pipeline create <name>`
+- [x] `zh pipeline create <name>`
 - [ ] `zh pipeline edit <pipeline>`
 - [ ] `zh pipeline delete <pipeline>`
 - [ ] `zh pipeline automations <pipeline>`

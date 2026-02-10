@@ -144,26 +144,26 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] Tests: resolution, output format
 
 ### `zh pipeline create <name>`
-- [ ] `--position`, `--description` flags
-- [ ] `--dry-run` support
-- [ ] Invalidate pipeline cache after creation
-- [ ] Tests: create with flags, dry run output
+- [x] `--position`, `--description` flags
+- [x] `--dry-run` support
+- [x] Invalidate pipeline cache after creation
+- [x] Tests: create with flags, dry run output
 
 ### `zh pipeline edit <name>`
-- [ ] Resolve pipeline, update name/position/description
-- [ ] `--dry-run` support
-- [ ] Invalidate pipeline cache after edit
-- [ ] Tests: edit each field, dry run
+- [x] Resolve pipeline, update name/position/description
+- [x] `--dry-run` support
+- [x] Invalidate pipeline cache after edit
+- [x] Tests: edit each field, dry run
 
 ### `zh pipeline delete <name> --into=<name>`
-- [ ] Resolve both pipelines
-- [ ] `--dry-run`: show issue count that would be moved
-- [ ] Invalidate pipeline cache after deletion
-- [ ] Tests: delete with target, dry run, missing --into error
+- [x] Resolve both pipelines
+- [x] `--dry-run`: show issue count that would be moved
+- [x] Invalidate pipeline cache after deletion
+- [x] Tests: delete with target, dry run, missing --into error
 
 ### `zh pipeline alias <name> <alias>`
-- [ ] Resolve pipeline, write alias to config
-- [ ] Tests: alias creation, alias used in resolution
+- [x] Resolve pipeline, write alias to config
+- [x] Tests: alias creation, alias used in resolution
 
 ### `zh pipeline automations <name>`
 - [ ] Display configured automations for the pipeline

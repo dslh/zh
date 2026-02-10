@@ -179,11 +179,12 @@ func runPipelineCreate(cmd *cobra.Command, args []string) error {
 			msg += fmt.Sprintf(" at position %d", pipelineCreatePosition)
 		}
 		msg += "."
-		output.MutationSingle(w, output.Yellow(msg))
 
+		var details []output.DetailLine
 		if pipelineCreateDescription != "" {
-			fmt.Fprintf(w, "\n%s\n", output.Yellow(fmt.Sprintf("  Description: %s", pipelineCreateDescription)))
+			details = append(details, output.DetailLine{Key: "Description", Value: pipelineCreateDescription})
 		}
+		output.MutationDryRunDetail(w, msg, details)
 		return nil
 	}
 
@@ -270,17 +271,17 @@ func runPipelineEdit(cmd *cobra.Command, args []string) error {
 
 	if pipelineEditDryRun {
 		msg := fmt.Sprintf("Would update pipeline %q:", resolved.Name)
-		output.MutationSingle(w, output.Yellow(msg))
-		fmt.Fprintln(w)
+		var details []output.DetailLine
 		if hasName {
-			fmt.Fprintln(w, output.Yellow(fmt.Sprintf("  Name: %s -> %s", resolved.Name, pipelineEditName)))
+			details = append(details, output.DetailLine{Key: "Name", Value: fmt.Sprintf("%s -> %s", resolved.Name, pipelineEditName)})
 		}
 		if hasPosition {
-			fmt.Fprintln(w, output.Yellow(fmt.Sprintf("  Position: -> %d", pipelineEditPosition)))
+			details = append(details, output.DetailLine{Key: "Position", Value: fmt.Sprintf("-> %d", pipelineEditPosition)})
 		}
 		if hasDescription {
-			fmt.Fprintln(w, output.Yellow(fmt.Sprintf("  Description: -> %s", pipelineEditDescription)))
+			details = append(details, output.DetailLine{Key: "Description", Value: fmt.Sprintf("-> %s", pipelineEditDescription)})
 		}
+		output.MutationDryRunDetail(w, msg, details)
 		return nil
 	}
 
@@ -381,11 +382,12 @@ func runPipelineDelete(cmd *cobra.Command, args []string) error {
 
 	if pipelineDeleteDryRun {
 		msg := fmt.Sprintf("Would delete pipeline %q.", source.Name)
-		output.MutationSingle(w, output.Yellow(msg))
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, output.Yellow(fmt.Sprintf("  Pipeline ID: %s", source.ID)))
-		fmt.Fprintln(w, output.Yellow(fmt.Sprintf("  Issues to move: %d", issueCount)))
-		fmt.Fprintln(w, output.Yellow(fmt.Sprintf("  Destination: %s (%s)", dest.Name, dest.ID)))
+		details := []output.DetailLine{
+			{Key: "Pipeline ID", Value: source.ID},
+			{Key: "Issues to move", Value: fmt.Sprintf("%d", issueCount)},
+			{Key: "Destination", Value: fmt.Sprintf("%s (%s)", dest.Name, dest.ID)},
+		}
+		output.MutationDryRunDetail(w, msg, details)
 		return nil
 	}
 

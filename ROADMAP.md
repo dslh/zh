@@ -426,10 +426,10 @@ Build the resolution layer now — almost every subsequent command depends on it
 
 ## Phase 14: --help and --dry-run audit
 
-- [ ] Review all `--help` text for accuracy and completeness
-- [ ] Verify `--dry-run` is implemented on every command listed in the spec
-- [ ] Consistent dry-run output format across all commands
-- [ ] Tests: help text doesn't error, dry-run on every applicable command
+- [x] Review all `--help` text for accuracy and completeness
+- [x] Verify `--dry-run` is implemented on every command listed in the spec
+- [x] Consistent dry-run output format across all commands
+- [x] Tests: help text doesn't error, dry-run on every applicable command
 
 ## Phase 15: Interactive mode & cold start wizard
 

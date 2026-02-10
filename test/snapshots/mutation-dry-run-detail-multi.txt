@@ -1,0 +1,5 @@
+Would update pipeline "In Development":
+
+  Name:        In Development -> Active Work
+  Position:    -> 3
+  Description: -> QA verification

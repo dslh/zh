@@ -70,6 +70,38 @@ func MutationDryRun(w io.Writer, header string, items []MutationItem) {
 	}
 }
 
+// DetailLine represents a key-value pair for single-entity dry-run output.
+type DetailLine struct {
+	Key   string // e.g. "Name", "Position", "Description"
+	Value string // e.g. "Active Work", "3", "QA verification"
+}
+
+// MutationDryRunDetail prints a dry-run confirmation for a single-entity
+// operation with key-value detail lines. Use this for create, edit, delete,
+// and state-change operations on a single entity.
+//
+// Example:
+//
+//	Would create pipeline "QA Review" at position 3.
+//
+//	  Description: QA verification
+func MutationDryRunDetail(w io.Writer, header string, details []DetailLine) {
+	fmt.Fprintln(w, Yellow(header))
+	if len(details) > 0 {
+		// Compute max key width for alignment.
+		maxKey := 0
+		for _, d := range details {
+			if len(d.Key) > maxKey {
+				maxKey = len(d.Key)
+			}
+		}
+		fmt.Fprintln(w)
+		for _, d := range details {
+			fmt.Fprintln(w, Yellow(fmt.Sprintf("  %-*s %s", maxKey+1, d.Key+":", d.Value)))
+		}
+	}
+}
+
 func printItems(w io.Writer, items []MutationItem) {
 	// Compute max ref width for alignment.
 	maxRef := 0

@@ -473,16 +473,17 @@ func runEpicCreateZenhub(client *api.Client, cfg *config.Config, cmd *cobra.Comm
 
 	if epicCreateDryRun {
 		msg := fmt.Sprintf("Would create epic %q.", title)
-		output.MutationSingle(w, output.Yellow(msg))
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, output.Yellow("  Type: ZenHub Epic"))
+		details := []output.DetailLine{
+			{Key: "Type", Value: "ZenHub Epic"},
+		}
 		if epicCreateBody != "" {
 			body := epicCreateBody
 			if len(body) > 60 {
 				body = body[:57] + "..."
 			}
-			fmt.Fprintln(w, output.Yellow(fmt.Sprintf("  Body: %s", body)))
+			details = append(details, output.DetailLine{Key: "Body", Value: body})
 		}
+		output.MutationDryRunDetail(w, msg, details)
 		return nil
 	}
 
@@ -556,17 +557,18 @@ func runEpicCreateLegacy(client *api.Client, cfg *config.Config, cmd *cobra.Comm
 
 	if epicCreateDryRun {
 		msg := fmt.Sprintf("Would create epic %q.", title)
-		output.MutationSingle(w, output.Yellow(msg))
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, output.Yellow("  Type: Legacy Epic (GitHub issue)"))
-		fmt.Fprintln(w, output.Yellow(fmt.Sprintf("  Repo: %s/%s", repo.OwnerName, repo.Name)))
+		details := []output.DetailLine{
+			{Key: "Type", Value: "Legacy Epic (GitHub issue)"},
+			{Key: "Repo", Value: fmt.Sprintf("%s/%s", repo.OwnerName, repo.Name)},
+		}
 		if epicCreateBody != "" {
 			body := epicCreateBody
 			if len(body) > 60 {
 				body = body[:57] + "..."
 			}
-			fmt.Fprintln(w, output.Yellow(fmt.Sprintf("  Body: %s", body)))
+			details = append(details, output.DetailLine{Key: "Body", Value: body})
 		}
+		output.MutationDryRunDetail(w, msg, details)
 		return nil
 	}
 
@@ -663,18 +665,18 @@ func runEpicEdit(cmd *cobra.Command, args []string) error {
 
 	if epicEditDryRun {
 		msg := fmt.Sprintf("Would update epic %q.", resolved.Title)
-		output.MutationSingle(w, output.Yellow(msg))
-		fmt.Fprintln(w)
+		var details []output.DetailLine
 		if epicEditTitle != "" {
-			fmt.Fprintln(w, output.Yellow(fmt.Sprintf("  Title: %s", epicEditTitle)))
+			details = append(details, output.DetailLine{Key: "Title", Value: epicEditTitle})
 		}
 		if epicEditBody != "" {
 			body := epicEditBody
 			if len(body) > 60 {
 				body = body[:57] + "..."
 			}
-			fmt.Fprintln(w, output.Yellow(fmt.Sprintf("  Body: %s", body)))
+			details = append(details, output.DetailLine{Key: "Body", Value: body})
 		}
+		output.MutationDryRunDetail(w, msg, details)
 		return nil
 	}
 
@@ -783,13 +785,14 @@ func runEpicDelete(cmd *cobra.Command, args []string) error {
 
 	if epicDeleteDryRun {
 		msg := fmt.Sprintf("Would delete epic %q.", resolved.Title)
-		output.MutationSingle(w, output.Yellow(msg))
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, output.Yellow(fmt.Sprintf("  ID:           %s", resolved.ID)))
-		if state != "" {
-			fmt.Fprintln(w, output.Yellow(fmt.Sprintf("  State:        %s", strings.ToLower(state))))
+		details := []output.DetailLine{
+			{Key: "ID", Value: resolved.ID},
 		}
-		fmt.Fprintln(w, output.Yellow(fmt.Sprintf("  Child issues: %d (will be removed from epic, not deleted)", childCount)))
+		if state != "" {
+			details = append(details, output.DetailLine{Key: "State", Value: strings.ToLower(state)})
+		}
+		details = append(details, output.DetailLine{Key: "Child issues", Value: fmt.Sprintf("%d (will be removed from epic, not deleted)", childCount)})
+		output.MutationDryRunDetail(w, msg, details)
 		return nil
 	}
 
@@ -859,11 +862,11 @@ func runEpicSetState(cmd *cobra.Command, args []string) error {
 
 	if epicSetStateDryRun {
 		msg := fmt.Sprintf("Would set state of epic %q to %s.", resolved.Title, strings.ToLower(graphqlState))
-		output.MutationSingle(w, output.Yellow(msg))
+		var details []output.DetailLine
 		if epicSetStateApplyToIssues {
-			fmt.Fprintln(w)
-			fmt.Fprintln(w, output.Yellow("  Also applying state change to child issues."))
+			details = append(details, output.DetailLine{Key: "Note", Value: "Also applying state change to child issues"})
 		}
+		output.MutationDryRunDetail(w, msg, details)
 		return nil
 	}
 
@@ -1067,18 +1070,18 @@ func runEpicSetDates(cmd *cobra.Command, args []string) error {
 
 	if epicSetDatesDryRun {
 		msg := fmt.Sprintf("Would update dates on epic %q.", resolved.Title)
-		output.MutationSingle(w, output.Yellow(msg))
-		fmt.Fprintln(w)
+		var details []output.DetailLine
 		if epicSetDatesStart != "" {
-			fmt.Fprintln(w, output.Yellow(fmt.Sprintf("  Start: %s", epicSetDatesStart)))
+			details = append(details, output.DetailLine{Key: "Start", Value: epicSetDatesStart})
 		} else if epicSetDatesClearStart {
-			fmt.Fprintln(w, output.Yellow("  Start: (clear)"))
+			details = append(details, output.DetailLine{Key: "Start", Value: "(clear)"})
 		}
 		if epicSetDatesEnd != "" {
-			fmt.Fprintln(w, output.Yellow(fmt.Sprintf("  End:   %s", epicSetDatesEnd)))
+			details = append(details, output.DetailLine{Key: "End", Value: epicSetDatesEnd})
 		} else if epicSetDatesClearEnd {
-			fmt.Fprintln(w, output.Yellow("  End:   (clear)"))
+			details = append(details, output.DetailLine{Key: "End", Value: "(clear)"})
 		}
+		output.MutationDryRunDetail(w, msg, details)
 		return nil
 	}
 

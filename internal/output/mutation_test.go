@@ -49,3 +49,31 @@ func TestMutationDryRun(t *testing.T) {
 	})
 	testutil.AssertSnapshot(t, "mutation-dry-run.txt", buf.String())
 }
+
+func TestMutationDryRunDetail(t *testing.T) {
+	var buf bytes.Buffer
+	MutationDryRunDetail(&buf, `Would create pipeline "QA Review" at position 3.`, []DetailLine{
+		{Key: "Description", Value: "QA verification"},
+	})
+	testutil.AssertSnapshot(t, "mutation-dry-run-detail.txt", buf.String())
+}
+
+func TestMutationDryRunDetailMultiple(t *testing.T) {
+	var buf bytes.Buffer
+	MutationDryRunDetail(&buf, `Would update pipeline "In Development":`, []DetailLine{
+		{Key: "Name", Value: "In Development -> Active Work"},
+		{Key: "Position", Value: "-> 3"},
+		{Key: "Description", Value: "-> QA verification"},
+	})
+	testutil.AssertSnapshot(t, "mutation-dry-run-detail-multi.txt", buf.String())
+}
+
+func TestMutationDryRunDetailNoDetails(t *testing.T) {
+	var buf bytes.Buffer
+	MutationDryRunDetail(&buf, `Would set state of epic "Q1 Roadmap" to closed.`, nil)
+	got := buf.String()
+	want := "Would set state of epic \"Q1 Roadmap\" to closed.\n"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}

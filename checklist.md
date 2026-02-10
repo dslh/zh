@@ -50,7 +50,7 @@
 - [x] `zh pipeline edit <pipeline>`
 - [x] `zh pipeline delete <pipeline>`
 - [x] `zh pipeline automations <pipeline>`
-- [ ] `zh pipeline alias <name> <pipeline>`
+- [x] `zh pipeline alias <name> <pipeline>`
 
 ## priority
 - [ ] `zh priority list`

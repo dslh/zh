@@ -391,15 +391,15 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] Tests: active sprint, named sprint, no active sprint
 
 ### `zh sprint add <issue>...`
-- [ ] Default to active sprint, `--sprint=<id>` to target specific
-- [ ] `--dry-run` support
-- [ ] `--continue-on-error` for batch operations
-- [ ] Tests: add to active, add to specific, no active sprint, continue-on-error with partial failure
+- [x] Default to active sprint, `--sprint=<id>` to target specific
+- [x] `--dry-run` support
+- [x] `--continue-on-error` for batch operations
+- [x] Tests: add to active, add to specific, no active sprint, continue-on-error with partial failure
 
 ### `zh sprint remove <issue>...`
-- [ ] `--dry-run` support
-- [ ] `--continue-on-error` for batch operations
-- [ ] Tests: remove, issue not in sprint, continue-on-error with partial failure
+- [x] `--dry-run` support
+- [x] `--continue-on-error` for batch operations
+- [x] Tests: remove, issue not in sprint, continue-on-error with partial failure
 
 ### `zh sprint velocity`
 - [ ] Show velocity trends for recent sprints (points completed per sprint)

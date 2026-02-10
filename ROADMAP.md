@@ -402,16 +402,16 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] Tests: remove, issue not in sprint, continue-on-error with partial failure
 
 ### `zh sprint velocity`
-- [ ] Show velocity trends for recent sprints (points completed per sprint)
-- [ ] Tests: with history, no sprints
+- [x] Show velocity trends for recent sprints (points completed per sprint)
+- [x] Tests: with history, no sprints
 
 ### `zh sprint scope [sprint]`
-- [ ] Show scope change history (issues added/removed during sprint)
-- [ ] Tests: with changes, no changes
+- [x] Show scope change history (issues added/removed during sprint)
+- [x] Tests: with changes, no changes
 
 ### `zh sprint review [sprint]`
-- [ ] Show details of review associated with a sprint
-- [ ] Tests: with data, no data
+- [x] Show details of review associated with a sprint
+- [x] Tests: with data, no data
 
 ## Phase 13: Utility commands
 

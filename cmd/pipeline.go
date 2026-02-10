@@ -491,7 +491,7 @@ func runPipelineShow(cmd *cobra.Command, args []string) error {
 		stage = formatStage(*detail.Stage)
 	}
 	fields = append(fields, output.KV("Stage", stage))
-	fields = append(fields, output.KV("Issues", fmt.Sprintf("%d", detail.Issues.TotalCount)))
+	fields = append(fields, output.KV("Issues", fmt.Sprintf("%d", totalCount)))
 
 	if detail.IsDefaultPRPipeline {
 		fields = append(fields, output.KV("Default PR pipeline", output.Green("yes")))

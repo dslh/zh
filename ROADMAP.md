@@ -268,9 +268,9 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] Tests: remove, label not on issue, continue-on-error with partial failure
 
 ### `zh issue activity <issue>`
-- [ ] Fetch ZenHub activity feed (pipeline moves, estimate changes, etc.)
-- [ ] `--github` flag: merge in GitHub timeline events (requires GitHub access)
-- [ ] Tests: ZenHub-only activity, merged timeline
+- [x] Fetch ZenHub activity feed (pipeline moves, estimate changes, etc.)
+- [x] `--github` flag: merge in GitHub timeline events (requires GitHub access)
+- [x] Tests: ZenHub-only activity, merged timeline
 
 ## Phase 11: Epic commands (ZenHub epics only — legacy deferred)
 

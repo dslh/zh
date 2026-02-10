@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"strings"
+
+	"github.com/dslh/zh/internal/exitcode"
 	"github.com/spf13/cobra"
 )
 
@@ -25,5 +28,24 @@ func init() {
 }
 
 func Execute() error {
-	return rootCmd.Execute()
+	err := rootCmd.Execute()
+	if err != nil {
+		// Cobra's built-in validators (ExactArgs, MinimumNArgs, etc.) and
+		// flag parsing errors return plain errors. Wrap them as usage errors
+		// so they exit with code 2.
+		if _, ok := err.(*exitcode.Error); !ok && isCobraUsageError(err) {
+			return exitcode.Usage(err.Error())
+		}
+	}
+	return err
+}
+
+// isCobraUsageError returns true if the error looks like a Cobra argument
+// validation or flag parsing error.
+func isCobraUsageError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "arg(s)") ||
+		strings.HasPrefix(msg, "unknown command") ||
+		strings.HasPrefix(msg, "unknown flag") ||
+		strings.HasPrefix(msg, "unknown shorthand flag")
 }

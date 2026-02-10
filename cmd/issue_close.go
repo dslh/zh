@@ -114,7 +114,7 @@ func runIssueClose(cmd *cobra.Command, args []string) error {
 	var alreadyClosed []resolvedCloseIssue
 
 	for _, arg := range args {
-		issue, err := resolveForClose(client, cfg.Workspace, arg, ghClient)
+		issue, err := resolveForClose(client, cfg.Workspace, arg, issueCloseRepo, ghClient)
 		if err != nil {
 			if issueCloseContinueOnError {
 				resolveFailed = append(resolveFailed, output.FailedItem{
@@ -256,9 +256,9 @@ func runIssueClose(cmd *cobra.Command, args []string) error {
 }
 
 // resolveForClose resolves an issue identifier and fetches its state.
-func resolveForClose(client *api.Client, workspaceID, identifier string, ghClient *gh.Client) (*resolvedCloseIssue, error) {
+func resolveForClose(client *api.Client, workspaceID, identifier, repoFlag string, ghClient *gh.Client) (*resolvedCloseIssue, error) {
 	result, err := resolve.Issue(client, workspaceID, identifier, &resolve.IssueOptions{
-		RepoFlag:     issueCloseRepo,
+		RepoFlag:     repoFlag,
 		GitHubClient: ghClient,
 	})
 	if err != nil {

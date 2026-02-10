@@ -32,7 +32,7 @@
 - [x] `zh issue priority <issue>`
 - [x] `zh issue label <issue>`
 - [x] `zh issue close <issue>...`
-- [ ] `zh issue reopen <issue>...`
+- [x] `zh issue reopen <issue>...`
 - [ ] `zh issue connect <pr> <issue>`
 - [ ] `zh issue disconnect <pr> <issue>`
 - [ ] `zh issue block <blocker> <blocked>`

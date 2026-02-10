@@ -455,6 +455,43 @@ func TestIssueReopenJSON(t *testing.T) {
 	}
 }
 
+func TestIssueReopenDryRunJSON(t *testing.T) {
+	resetIssueFlags()
+	resetIssueReopenFlags()
+
+	ms := setupIssueReopenServer(t)
+	setupIssueTestEnv(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"issue", "reopen", "task-tracker#10", "--pipeline=New Issues", "--dry-run", "--output=json"})
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("issue reopen --dry-run --output=json returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nOutput: %s", err, buf.String())
+	}
+	if result["dryRun"] != true {
+		t.Errorf("JSON should have dryRun=true, got: %v", result["dryRun"])
+	}
+	pipeline, ok := result["pipeline"].(map[string]any)
+	if !ok {
+		t.Fatal("JSON should contain pipeline object")
+	}
+	if pipeline["name"] != "New Issues" {
+		t.Errorf("JSON pipeline name should be 'New Issues', got: %v", pipeline["name"])
+	}
+	wouldReopen, ok := result["wouldReopen"].([]any)
+	if !ok || len(wouldReopen) == 0 {
+		t.Error("JSON should contain non-empty wouldReopen array")
+	}
+}
+
 func TestIssueReopenHelp(t *testing.T) {
 	resetIssueFlags()
 	resetIssueReopenFlags()

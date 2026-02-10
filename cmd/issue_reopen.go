@@ -112,7 +112,7 @@ func runIssueReopen(cmd *cobra.Command, args []string) error {
 	var alreadyOpen []resolvedCloseIssue
 
 	for _, arg := range args {
-		issue, err := resolveForClose(client, cfg.Workspace, arg, ghClient)
+		issue, err := resolveForClose(client, cfg.Workspace, arg, issueReopenRepo, ghClient)
 		if err != nil {
 			if issueReopenContinueOnError {
 				resolveFailed = append(resolveFailed, output.FailedItem{
@@ -138,6 +138,9 @@ func runIssueReopen(cmd *cobra.Command, args []string) error {
 
 	// Dry run
 	if issueReopenDryRun {
+		if output.IsJSON(outputFormat) {
+			return renderReopenDryRunJSON(w, resolved, alreadyOpen, resolveFailed, targetPipeline, position)
+		}
 		return renderReopenDryRun(w, resolved, alreadyOpen, resolveFailed, targetPipeline.Name, position)
 	}
 
@@ -253,6 +256,25 @@ func runIssueReopen(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func renderReopenDryRunJSON(w writerFlusher, resolved []resolvedCloseIssue, alreadyOpen []resolvedCloseIssue, resolveFailed []output.FailedItem, pipeline *resolve.PipelineResult, position string) error {
+	wouldReopen := make([]map[string]any, len(resolved))
+	for i, r := range resolved {
+		wouldReopen[i] = map[string]any{
+			"ref":   r.Ref(),
+			"title": r.Title,
+			"state": strings.ToLower(r.State),
+		}
+	}
+	return output.JSON(w, map[string]any{
+		"dryRun":      true,
+		"wouldReopen": wouldReopen,
+		"pipeline":    map[string]any{"id": pipeline.ID, "name": pipeline.Name},
+		"position":    position,
+		"alreadyOpen": formatCloseItemsJSON(alreadyOpen),
+		"failed":      resolveFailed,
+	})
 }
 
 func renderReopenDryRun(w writerFlusher, resolved []resolvedCloseIssue, alreadyOpen []resolvedCloseIssue, resolveFailed []output.FailedItem, pipelineName, position string) error {

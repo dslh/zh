@@ -140,6 +140,9 @@ func runIssueClose(cmd *cobra.Command, args []string) error {
 
 	// Dry run
 	if issueCloseDryRun {
+		if output.IsJSON(outputFormat) {
+			return renderCloseDryRunJSON(w, resolved, alreadyClosed, resolveFailed)
+		}
 		return renderCloseDryRun(w, resolved, alreadyClosed, resolveFailed)
 	}
 
@@ -298,6 +301,23 @@ func resolveForClose(client *api.Client, workspaceID, identifier string, ghClien
 		RepoOwner: resp.Node.Repository.OwnerName,
 		State:     resp.Node.State,
 	}, nil
+}
+
+func renderCloseDryRunJSON(w writerFlusher, resolved []resolvedCloseIssue, alreadyClosed []resolvedCloseIssue, resolveFailed []output.FailedItem) error {
+	wouldClose := make([]map[string]any, len(resolved))
+	for i, r := range resolved {
+		wouldClose[i] = map[string]any{
+			"ref":   r.Ref(),
+			"title": r.Title,
+			"state": strings.ToLower(r.State),
+		}
+	}
+	return output.JSON(w, map[string]any{
+		"dryRun":        true,
+		"wouldClose":    wouldClose,
+		"alreadyClosed": formatCloseItemsJSON(alreadyClosed),
+		"failed":        resolveFailed,
+	})
 }
 
 func renderCloseDryRun(w writerFlusher, resolved []resolvedCloseIssue, alreadyClosed []resolvedCloseIssue, resolveFailed []output.FailedItem) error {

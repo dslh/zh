@@ -92,6 +92,36 @@ func TestIssueCloseDryRun(t *testing.T) {
 	}
 }
 
+func TestIssueCloseDryRunJSON(t *testing.T) {
+	resetIssueFlags()
+	resetIssueCloseFlags()
+
+	ms := setupIssueCloseServer(t)
+	setupIssueTestEnv(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"issue", "close", "task-tracker#1", "--dry-run", "--output=json"})
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("issue close --dry-run --output=json returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nOutput: %s", err, buf.String())
+	}
+	if result["dryRun"] != true {
+		t.Error("JSON should contain dryRun: true")
+	}
+	wouldClose, ok := result["wouldClose"].([]any)
+	if !ok || len(wouldClose) != 1 {
+		t.Errorf("JSON should contain wouldClose array with 1 item, got: %v", result["wouldClose"])
+	}
+}
+
 func TestIssueCloseAlreadyClosed(t *testing.T) {
 	resetIssueFlags()
 	resetIssueCloseFlags()

@@ -31,7 +31,7 @@
 - [x] `zh issue estimate <issue>`
 - [x] `zh issue priority <issue>`
 - [x] `zh issue label <issue>`
-- [ ] `zh issue close <issue>...`
+- [x] `zh issue close <issue>...`
 - [ ] `zh issue reopen <issue>...`
 - [ ] `zh issue connect <pr> <issue>`
 - [ ] `zh issue disconnect <pr> <issue>`

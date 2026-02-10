@@ -348,6 +348,190 @@ func TestEpicHelpText(t *testing.T) {
 	}
 }
 
+// --- epic progress ---
+
+func TestEpicProgressZenhub(t *testing.T) {
+	resetEpicFlags()
+
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponse())
+	ms.HandleQuery("GetZenhubEpicProgress", epicProgressZenhubResponse())
+
+	cacheDir := t.TempDir()
+	configDir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cacheDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+	t.Setenv("ZH_API_KEY", "test-key")
+	t.Setenv("ZH_WORKSPACE", "ws-123")
+	t.Setenv("ZH_GITHUB_TOKEN", "")
+
+	origNew := apiNewFunc
+	apiNewFunc = func(apiKey string, opts ...api.Option) *api.Client {
+		return api.New(apiKey, append(opts, api.WithEndpoint(ms.URL()))...)
+	}
+	defer func() { apiNewFunc = origNew }()
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "progress", "Q1 Platform"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic progress returned error: %v", err)
+	}
+
+	out := buf.String()
+
+	if !strings.Contains(out, "EPIC PROGRESS: Q1 Platform Improvements") {
+		t.Error("output should contain epic progress title")
+	}
+	if !strings.Contains(out, "PROGRESS") {
+		t.Error("output should contain PROGRESS section")
+	}
+	if !strings.Contains(out, "Issues:") {
+		t.Error("output should contain Issues progress line")
+	}
+	if !strings.Contains(out, "12/20") {
+		t.Errorf("output should show 12/20 completed, got: %s", out)
+	}
+	if !strings.Contains(out, "Estimates:") {
+		t.Error("output should contain Estimates progress line")
+	}
+	if !strings.Contains(out, "34/55") {
+		t.Errorf("output should show 34/55 completed, got: %s", out)
+	}
+}
+
+func TestEpicProgressLegacy(t *testing.T) {
+	resetEpicFlags()
+
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("GetLegacyEpicProgress", epicProgressLegacyResponse())
+
+	cacheDir := t.TempDir()
+	configDir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cacheDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+	t.Setenv("ZH_API_KEY", "test-key")
+	t.Setenv("ZH_WORKSPACE", "ws-123")
+	t.Setenv("ZH_GITHUB_TOKEN", "")
+
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	origNew := apiNewFunc
+	apiNewFunc = func(apiKey string, opts ...api.Option) *api.Client {
+		return api.New(apiKey, append(opts, api.WithEndpoint(ms.URL()))...)
+	}
+	defer func() { apiNewFunc = origNew }()
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "progress", "Bug Tracker"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic progress (legacy) returned error: %v", err)
+	}
+
+	out := buf.String()
+
+	if !strings.Contains(out, "EPIC PROGRESS:") {
+		t.Error("output should contain epic progress header")
+	}
+	if !strings.Contains(out, "task-tracker#1") {
+		t.Error("output should contain issue reference")
+	}
+	if !strings.Contains(out, "1/2") {
+		t.Errorf("output should show 1/2 completed, got: %s", out)
+	}
+}
+
+func TestEpicProgressNoIssues(t *testing.T) {
+	resetEpicFlags()
+
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponse())
+	ms.HandleQuery("GetZenhubEpicProgress", epicProgressEmptyResponse())
+
+	cacheDir := t.TempDir()
+	configDir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cacheDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+	t.Setenv("ZH_API_KEY", "test-key")
+	t.Setenv("ZH_WORKSPACE", "ws-123")
+	t.Setenv("ZH_GITHUB_TOKEN", "")
+
+	origNew := apiNewFunc
+	apiNewFunc = func(apiKey string, opts ...api.Option) *api.Client {
+		return api.New(apiKey, append(opts, api.WithEndpoint(ms.URL()))...)
+	}
+	defer func() { apiNewFunc = origNew }()
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "progress", "Q1 Platform"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic progress (no issues) returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "No child issues") {
+		t.Errorf("output should say no child issues, got: %s", out)
+	}
+}
+
+func TestEpicProgressJSON(t *testing.T) {
+	resetEpicFlags()
+
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponse())
+	ms.HandleQuery("GetZenhubEpicProgress", epicProgressZenhubResponse())
+
+	cacheDir := t.TempDir()
+	configDir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cacheDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+	t.Setenv("ZH_API_KEY", "test-key")
+	t.Setenv("ZH_WORKSPACE", "ws-123")
+	t.Setenv("ZH_GITHUB_TOKEN", "")
+
+	origNew := apiNewFunc
+	apiNewFunc = func(apiKey string, opts ...api.Option) *api.Client {
+		return api.New(apiKey, append(opts, api.WithEndpoint(ms.URL()))...)
+	}
+	defer func() { apiNewFunc = origNew }()
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "progress", "Q1 Platform", "--output=json"})
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic progress --output=json returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nOutput: %s", err, buf.String())
+	}
+
+	if result["issues"] == nil {
+		t.Error("JSON should contain issues field")
+	}
+	if result["estimates"] == nil {
+		t.Error("JSON should contain estimates field")
+	}
+	issues := result["issues"].(map[string]any)
+	if issues["closed"] != float64(12) {
+		t.Errorf("JSON issues.closed should be 12, got: %v", issues["closed"])
+	}
+	if issues["total"] != float64(20) {
+		t.Errorf("JSON issues.total should be 20, got: %v", issues["total"])
+	}
+}
+
 // --- epic alias ---
 
 func TestEpicAliasSet(t *testing.T) {
@@ -639,6 +823,82 @@ func epicShowZenhubResponse() map[string]any {
 				"blockedItems": map[string]any{
 					"totalCount": 0,
 					"nodes":      []any{},
+				},
+			},
+		},
+	}
+}
+
+func epicProgressZenhubResponse() map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"id":       "epic-zen-1",
+				"title":    "Q1 Platform Improvements",
+				"state":    "IN_PROGRESS",
+				"estimate": map[string]any{"value": 34},
+				"zenhubIssueCountProgress": map[string]any{
+					"open":   8,
+					"closed": 12,
+					"total":  20,
+				},
+				"zenhubIssueEstimateProgress": map[string]any{
+					"open":   21,
+					"closed": 34,
+					"total":  55,
+				},
+			},
+		},
+	}
+}
+
+func epicProgressLegacyResponse() map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"id": "legacy-epic-1",
+				"issue": map[string]any{
+					"title":    "Bug Tracker Improvements",
+					"number":   1,
+					"state":    "OPEN",
+					"estimate": nil,
+					"repository": map[string]any{
+						"name":      "task-tracker",
+						"ownerName": "dlakehammond",
+					},
+				},
+				"issueCountProgress": map[string]any{
+					"open":   1,
+					"closed": 1,
+					"total":  2,
+				},
+				"issueEstimateProgress": map[string]any{
+					"open":   0,
+					"closed": 3,
+					"total":  3,
+				},
+			},
+		},
+	}
+}
+
+func epicProgressEmptyResponse() map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"id":       "epic-zen-1",
+				"title":    "Q1 Platform Improvements",
+				"state":    "OPEN",
+				"estimate": nil,
+				"zenhubIssueCountProgress": map[string]any{
+					"open":   0,
+					"closed": 0,
+					"total":  0,
+				},
+				"zenhubIssueEstimateProgress": map[string]any{
+					"open":   0,
+					"closed": 0,
+					"total":  0,
 				},
 			},
 		},

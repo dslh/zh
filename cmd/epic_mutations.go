@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -166,6 +167,28 @@ const epicChildIssueIDsQuery = `query GetEpicChildIssueIDs($id: ID!, $workspaceI
   }
 }`
 
+const setMultipleEstimatesOnZenhubEpicsMutation = `mutation SetEstimateOnZenhubEpics($input: SetMultipleEstimatesOnZenhubEpicsInput!) {
+  setMultipleEstimatesOnZenhubEpics(input: $input) {
+    zenhubEpics {
+      id
+      title
+      estimate {
+        value
+      }
+    }
+  }
+}`
+
+const epicEstimateQuery = `query GetZenhubEpicEstimate($id: ID!) {
+  node(id: $id) {
+    ... on ZenhubEpic {
+      id
+      title
+      estimate { value }
+    }
+  }
+}`
+
 // Commands
 
 var epicCreateCmd = &cobra.Command{
@@ -268,6 +291,20 @@ Examples:
 	RunE: runEpicRemove,
 }
 
+var epicEstimateCmd = &cobra.Command{
+	Use:   "estimate <epic> [value]",
+	Short: "Set or clear the estimate on an epic",
+	Long: `Set or clear the estimate on a ZenHub epic.
+
+Provide a value to set the estimate. Omit the value to clear it.
+
+Examples:
+  zh epic estimate "Q1 Roadmap" 13
+  zh epic estimate "Q1 Roadmap"      # clears the estimate`,
+	Args: cobra.RangeArgs(1, 2),
+	RunE: runEpicEstimate,
+}
+
 // Flag variables
 
 var (
@@ -301,6 +338,8 @@ var (
 	epicRemoveRepo            string
 	epicRemoveAll             bool
 	epicRemoveContinueOnError bool
+
+	epicEstimateDryRun bool
 )
 
 func init() {
@@ -335,6 +374,8 @@ func init() {
 	epicRemoveCmd.Flags().BoolVar(&epicRemoveAll, "all", false, "Remove all issues from the epic")
 	epicRemoveCmd.Flags().BoolVar(&epicRemoveContinueOnError, "continue-on-error", false, "Continue processing remaining issues after a resolution error")
 
+	epicEstimateCmd.Flags().BoolVar(&epicEstimateDryRun, "dry-run", false, "Show what would be changed without executing")
+
 	epicCmd.AddCommand(epicCreateCmd)
 	epicCmd.AddCommand(epicEditCmd)
 	epicCmd.AddCommand(epicDeleteCmd)
@@ -343,6 +384,7 @@ func init() {
 	epicCmd.AddCommand(epicSetDatesCmd)
 	epicCmd.AddCommand(epicAddCmd)
 	epicCmd.AddCommand(epicRemoveCmd)
+	epicCmd.AddCommand(epicEstimateCmd)
 }
 
 func resetEpicMutationFlags() {
@@ -376,6 +418,8 @@ func resetEpicMutationFlags() {
 	epicRemoveRepo = ""
 	epicRemoveAll = false
 	epicRemoveContinueOnError = false
+
+	epicEstimateDryRun = false
 }
 
 // fetchWorkspaceOrgID retrieves the ZenHub organization ID for a workspace.
@@ -1621,6 +1665,154 @@ func fetchAllEpicChildIssues(client *api.Client, workspaceID, epicID string) ([]
 	}
 
 	return all, nil
+}
+
+// runEpicEstimate implements `zh epic estimate <epic> [value]`.
+func runEpicEstimate(cmd *cobra.Command, args []string) error {
+	cfg, err := requireWorkspace()
+	if err != nil {
+		return err
+	}
+
+	client := newClient(cfg, cmd)
+	w := cmd.OutOrStdout()
+
+	// Parse value argument (if present)
+	var newValue *float64
+	if len(args) == 2 {
+		v, err := strconv.ParseFloat(args[1], 64)
+		if err != nil {
+			return exitcode.Usage(fmt.Sprintf("invalid estimate value %q — must be a number", args[1]))
+		}
+		newValue = &v
+	}
+
+	// Resolve the epic
+	resolved, err := resolve.Epic(client, cfg.Workspace, args[0], cfg.Aliases.Epics)
+	if err != nil {
+		return err
+	}
+
+	if resolved.Type == "legacy" {
+		return exitcode.Usage(fmt.Sprintf("epic %q is a legacy epic (backed by a GitHub issue) — setting estimates is only supported for ZenHub epics", resolved.Title))
+	}
+
+	// Fetch current estimate for dry-run context
+	var currentEstimate *float64
+	data, err := client.Execute(epicEstimateQuery, map[string]any{
+		"id": resolved.ID,
+	})
+	if err != nil {
+		return exitcode.General("fetching epic estimate", err)
+	}
+
+	var fetchResp struct {
+		Node *struct {
+			ID       string `json:"id"`
+			Title    string `json:"title"`
+			Estimate *struct {
+				Value float64 `json:"value"`
+			} `json:"estimate"`
+		} `json:"node"`
+	}
+	if err := json.Unmarshal(data, &fetchResp); err != nil {
+		return exitcode.General("parsing epic estimate", err)
+	}
+	if fetchResp.Node != nil && fetchResp.Node.Estimate != nil {
+		v := fetchResp.Node.Estimate.Value
+		currentEstimate = &v
+	}
+
+	// Dry run
+	if epicEstimateDryRun {
+		var header string
+		var ctx string
+
+		if currentEstimate != nil {
+			ctx = fmt.Sprintf("(currently: %s)", formatEstimate(*currentEstimate))
+		} else {
+			ctx = "(currently: none)"
+		}
+
+		if newValue != nil {
+			header = fmt.Sprintf("Would set estimate on epic %q to %s", resolved.Title, formatEstimate(*newValue))
+		} else {
+			header = fmt.Sprintf("Would clear estimate from epic %q", resolved.Title)
+		}
+
+		items := []output.MutationItem{
+			{
+				Ref:   resolved.Title,
+				Title: ctx,
+			},
+		}
+
+		output.MutationDryRun(w, header, items)
+		return nil
+	}
+
+	// Execute mutation
+	input := map[string]any{
+		"zenhubEpicIds": []string{resolved.ID},
+	}
+	if newValue != nil {
+		input["value"] = *newValue
+	} else {
+		input["value"] = nil
+	}
+
+	data, err = client.Execute(setMultipleEstimatesOnZenhubEpicsMutation, map[string]any{
+		"input": input,
+	})
+	if err != nil {
+		return exitcode.General(fmt.Sprintf("setting estimate on epic %q", resolved.Title), err)
+	}
+
+	// Parse response
+	var resp struct {
+		SetMultipleEstimatesOnZenhubEpics struct {
+			ZenhubEpics []struct {
+				ID       string `json:"id"`
+				Title    string `json:"title"`
+				Estimate *struct {
+					Value float64 `json:"value"`
+				} `json:"estimate"`
+			} `json:"zenhubEpics"`
+		} `json:"setMultipleEstimatesOnZenhubEpics"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return exitcode.General("parsing estimate response", err)
+	}
+
+	// JSON output
+	if output.IsJSON(outputFormat) {
+		jsonResp := map[string]any{
+			"epic": map[string]any{
+				"id":    resolved.ID,
+				"title": resolved.Title,
+			},
+			"estimate": map[string]any{
+				"previous": formatEstimateJSON(currentEstimate),
+				"current":  formatEstimateJSON(newValue),
+			},
+		}
+		return output.JSON(w, jsonResp)
+	}
+
+	// Render confirmation
+	if newValue != nil {
+		output.MutationSingle(w, output.Green(fmt.Sprintf(
+			"Set estimate on epic %q to %s.",
+			resolved.Title, formatEstimate(*newValue),
+		)))
+	} else {
+		output.MutationSingle(w, output.Green(fmt.Sprintf(
+			"Cleared estimate from epic %q.",
+			resolved.Title,
+		)))
+	}
+
+	return nil
 }
 
 func renderEpicRemoveDryRun(w writerFlusher, epic *resolve.EpicResult, issues []resolvedEpicIssue, failed []output.FailedItem) error {

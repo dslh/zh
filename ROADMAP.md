@@ -333,13 +333,13 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] Tests: alias creation, alias used in resolution
 
 ### `zh epic progress <epic>`
-- [ ] Show completion: issue count (closed/total), estimate progress (completed/total)
-- [ ] Tests: partial progress, all done, no estimates
+- [x] Show completion: issue count (closed/total), estimate progress (completed/total)
+- [x] Tests: partial progress, all done, no estimates
 
 ### `zh epic estimate <epic> <value>`
-- [ ] Set estimate on epic (omit value to clear)
-- [ ] `--dry-run` support
-- [ ] Tests: set, clear
+- [x] Set estimate on epic (omit value to clear)
+- [x] `--dry-run` support
+- [x] Tests: set, clear
 
 ### `zh epic assignee add <epic> <user>...`
 - [ ] Resolve user(s), add to epic

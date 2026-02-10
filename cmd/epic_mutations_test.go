@@ -1347,6 +1347,237 @@ func TestEpicRemoveNoIssues(t *testing.T) {
 	}
 }
 
+// --- epic estimate ---
+
+func TestEpicEstimateSet(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	ms.HandleQuery("GetZenhubEpicEstimate", epicEstimateQueryResponse(5))
+	ms.HandleQuery("SetEstimateOnZenhubEpics", setEpicEstimateResponse(13))
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "estimate", "Q1 Platform", "13"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic estimate returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Set estimate") {
+		t.Errorf("output should confirm estimate set, got: %s", out)
+	}
+	if !strings.Contains(out, "13") {
+		t.Errorf("output should contain new value, got: %s", out)
+	}
+}
+
+func TestEpicEstimateClear(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	ms.HandleQuery("GetZenhubEpicEstimate", epicEstimateQueryResponse(5))
+	ms.HandleQuery("SetEstimateOnZenhubEpics", setEpicEstimateClearResponse())
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "estimate", "Q1 Platform"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic estimate (clear) returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Cleared estimate") {
+		t.Errorf("output should confirm estimate cleared, got: %s", out)
+	}
+}
+
+func TestEpicEstimateDryRun(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	ms.HandleQuery("GetZenhubEpicEstimate", epicEstimateQueryResponse(5))
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "estimate", "Q1 Platform", "13", "--dry-run"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic estimate --dry-run returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Would set estimate") {
+		t.Errorf("dry-run should use 'Would' prefix, got: %s", out)
+	}
+	if !strings.Contains(out, "13") {
+		t.Errorf("dry-run should show new value, got: %s", out)
+	}
+	if !strings.Contains(out, "currently: 5") {
+		t.Errorf("dry-run should show current value, got: %s", out)
+	}
+}
+
+func TestEpicEstimateClearDryRun(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	ms.HandleQuery("GetZenhubEpicEstimate", epicEstimateQueryResponseNone())
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "estimate", "Q1 Platform", "--dry-run"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic estimate clear --dry-run returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Would clear estimate") {
+		t.Errorf("dry-run should say 'Would clear', got: %s", out)
+	}
+	if !strings.Contains(out, "currently: none") {
+		t.Errorf("dry-run should show current as none, got: %s", out)
+	}
+}
+
+func TestEpicEstimateJSON(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListEpics", epicResolutionResponseForMutations())
+	ms.HandleQuery("GetZenhubEpicEstimate", epicEstimateQueryResponse(5))
+	ms.HandleQuery("SetEstimateOnZenhubEpics", setEpicEstimateResponse(13))
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"epic", "estimate", "Q1 Platform", "13", "--output=json"})
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("epic estimate --output=json returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nOutput: %s", err, buf.String())
+	}
+
+	if result["epic"] == nil {
+		t.Error("JSON should contain epic field")
+	}
+	if result["estimate"] == nil {
+		t.Error("JSON should contain estimate field")
+	}
+	est := result["estimate"].(map[string]any)
+	if est["previous"] != float64(5) {
+		t.Errorf("JSON estimate.previous should be 5, got: %v", est["previous"])
+	}
+	if est["current"] != float64(13) {
+		t.Errorf("JSON estimate.current should be 13, got: %v", est["current"])
+	}
+}
+
+func TestEpicEstimateInvalidValue(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	setupEpicMutationTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(buf)
+	rootCmd.SetArgs([]string{"epic", "estimate", "Q1 Platform", "abc"})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("epic estimate with invalid value should return error")
+	}
+	if !strings.Contains(err.Error(), "invalid estimate value") {
+		t.Errorf("error should mention invalid value, got: %v", err)
+	}
+}
+
+func TestEpicEstimateLegacyError(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	setupEpicMutationTest(t, ms)
+
+	_ = cache.Set(resolve.EpicCacheKey("ws-123"), []resolve.CachedEpic{
+		{ID: "legacy-epic-1", Title: "Bug Tracker Improvements", Type: "legacy", IssueNumber: 1, RepoName: "task-tracker", RepoOwner: "dlakehammond"},
+	})
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(buf)
+	rootCmd.SetArgs([]string{"epic", "estimate", "Bug Tracker", "5"})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("epic estimate on legacy epic should return error")
+	}
+	if !strings.Contains(err.Error(), "legacy epic") {
+		t.Errorf("error should mention legacy epic, got: %v", err)
+	}
+}
+
+// --- epic estimate helpers ---
+
+func epicEstimateQueryResponse(value float64) map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"id":       "epic-zen-1",
+				"title":    "Q1 Platform Improvements",
+				"estimate": map[string]any{"value": value},
+			},
+		},
+	}
+}
+
+func epicEstimateQueryResponseNone() map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"id":       "epic-zen-1",
+				"title":    "Q1 Platform Improvements",
+				"estimate": nil,
+			},
+		},
+	}
+}
+
+func setEpicEstimateResponse(value float64) map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"setMultipleEstimatesOnZenhubEpics": map[string]any{
+				"zenhubEpics": []any{
+					map[string]any{
+						"id":       "epic-zen-1",
+						"title":    "Q1 Platform Improvements",
+						"estimate": map[string]any{"value": value},
+					},
+				},
+			},
+		},
+	}
+}
+
+func setEpicEstimateClearResponse() map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"setMultipleEstimatesOnZenhubEpics": map[string]any{
+				"zenhubEpics": []any{
+					map[string]any{
+						"id":       "epic-zen-1",
+						"title":    "Q1 Platform Improvements",
+						"estimate": nil,
+					},
+				},
+			},
+		},
+	}
+}
+
 // --- set-dates helpers ---
 
 func updateZenhubEpicDatesResponse(start, end string) map[string]any {

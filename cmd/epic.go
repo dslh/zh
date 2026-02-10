@@ -366,6 +366,21 @@ and legacy (issue-backed) epics.`,
 	RunE: runEpicList,
 }
 
+var epicProgressCmd = &cobra.Command{
+	Use:   "progress <epic>",
+	Short: "Show epic completion status",
+	Long: `Show completion status for an epic: issue count (closed/total) and
+estimate progress (completed/total).
+
+The epic can be specified as:
+  - ZenHub ID
+  - exact title or unique title substring
+  - owner/repo#number (for legacy epics)
+  - an alias set with 'zh epic alias'`,
+	Args: cobra.ExactArgs(1),
+	RunE: runEpicProgress,
+}
+
 var epicShowCmd = &cobra.Command{
 	Use:   "show <epic>",
 	Short: "View epic details",
@@ -397,6 +412,7 @@ func init() {
 
 	epicCmd.AddCommand(epicListCmd)
 	epicCmd.AddCommand(epicShowCmd)
+	epicCmd.AddCommand(epicProgressCmd)
 	rootCmd.AddCommand(epicCmd)
 }
 
@@ -939,6 +955,222 @@ func runEpicShowLegacy(client *api.Client, epicID string, w writerFlusher) error
 	if issue.HtmlUrl != "" {
 		d.Section("LINKS")
 		fmt.Fprintf(w, "  GitHub:  %s\n", output.Cyan(issue.HtmlUrl))
+	}
+
+	return nil
+}
+
+// GraphQL queries for epic progress
+const epicProgressZenhubQuery = `query GetZenhubEpicProgress($id: ID!, $workspaceId: ID!) {
+  node(id: $id) {
+    ... on ZenhubEpic {
+      id
+      title
+      state
+      estimate { value }
+      zenhubIssueCountProgress { open closed total }
+      zenhubIssueEstimateProgress { open closed total }
+    }
+  }
+}`
+
+const epicProgressLegacyQuery = `query GetLegacyEpicProgress($id: ID!) {
+  node(id: $id) {
+    ... on Epic {
+      id
+      issue {
+        title
+        number
+        state
+        estimate { value }
+        repository { name ownerName }
+      }
+      issueCountProgress { open closed total }
+      issueEstimateProgress { open closed total }
+    }
+  }
+}`
+
+// runEpicProgress implements `zh epic progress <epic>`.
+func runEpicProgress(cmd *cobra.Command, args []string) error {
+	cfg, err := requireWorkspace()
+	if err != nil {
+		return err
+	}
+
+	client := newClient(cfg, cmd)
+	w := cmd.OutOrStdout()
+
+	// Resolve the epic
+	resolved, err := resolve.Epic(client, cfg.Workspace, args[0], cfg.Aliases.Epics)
+	if err != nil {
+		return err
+	}
+
+	switch resolved.Type {
+	case "legacy":
+		return runEpicProgressLegacy(client, resolved.ID, w)
+	default:
+		return runEpicProgressZenhub(client, cfg.Workspace, resolved.ID, w)
+	}
+}
+
+// runEpicProgressZenhub shows progress for a ZenHub epic.
+func runEpicProgressZenhub(client *api.Client, workspaceID, epicID string, w writerFlusher) error {
+	data, err := client.Execute(epicProgressZenhubQuery, map[string]any{
+		"id":          epicID,
+		"workspaceId": workspaceID,
+	})
+	if err != nil {
+		return exitcode.General("fetching epic progress", err)
+	}
+
+	var resp struct {
+		Node *struct {
+			ID       string `json:"id"`
+			Title    string `json:"title"`
+			State    string `json:"state"`
+			Estimate *struct {
+				Value float64 `json:"value"`
+			} `json:"estimate"`
+			IssueCountProgress struct {
+				Open   int `json:"open"`
+				Closed int `json:"closed"`
+				Total  int `json:"total"`
+			} `json:"zenhubIssueCountProgress"`
+			IssueEstimateProgress struct {
+				Open   int `json:"open"`
+				Closed int `json:"closed"`
+				Total  int `json:"total"`
+			} `json:"zenhubIssueEstimateProgress"`
+		} `json:"node"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return exitcode.General("parsing epic progress", err)
+	}
+
+	if resp.Node == nil {
+		return exitcode.NotFoundError(fmt.Sprintf("epic %q not found", epicID))
+	}
+
+	epic := resp.Node
+
+	if output.IsJSON(outputFormat) {
+		return output.JSON(w, map[string]any{
+			"id":    epic.ID,
+			"title": epic.Title,
+			"state": epic.State,
+			"issues": map[string]any{
+				"open":   epic.IssueCountProgress.Open,
+				"closed": epic.IssueCountProgress.Closed,
+				"total":  epic.IssueCountProgress.Total,
+			},
+			"estimates": map[string]any{
+				"open":   epic.IssueEstimateProgress.Open,
+				"closed": epic.IssueEstimateProgress.Closed,
+				"total":  epic.IssueEstimateProgress.Total,
+			},
+		})
+	}
+
+	d := output.NewDetailWriter(w, "EPIC PROGRESS", epic.Title)
+	d.Fields([]output.KeyValue{
+		output.KV("State", formatEpicState(epic.State)),
+	})
+
+	if epic.IssueCountProgress.Total > 0 {
+		d.Section("PROGRESS")
+		fmt.Fprintf(w, "Issues:     %s\n", output.FormatProgress(epic.IssueCountProgress.Closed, epic.IssueCountProgress.Total))
+		if epic.IssueEstimateProgress.Total > 0 {
+			fmt.Fprintf(w, "Estimates:  %s\n", output.FormatProgress(epic.IssueEstimateProgress.Closed, epic.IssueEstimateProgress.Total))
+		}
+	} else {
+		d.Section("PROGRESS")
+		fmt.Fprintln(w, "No child issues.")
+	}
+
+	return nil
+}
+
+// runEpicProgressLegacy shows progress for a legacy epic.
+func runEpicProgressLegacy(client *api.Client, epicID string, w writerFlusher) error {
+	data, err := client.Execute(epicProgressLegacyQuery, map[string]any{
+		"id": epicID,
+	})
+	if err != nil {
+		return exitcode.General("fetching epic progress", err)
+	}
+
+	var resp struct {
+		Node *struct {
+			ID    string `json:"id"`
+			Issue struct {
+				Title    string `json:"title"`
+				Number   int    `json:"number"`
+				State    string `json:"state"`
+				Estimate *struct {
+					Value float64 `json:"value"`
+				} `json:"estimate"`
+				Repository struct {
+					Name      string `json:"name"`
+					OwnerName string `json:"ownerName"`
+				} `json:"repository"`
+			} `json:"issue"`
+			IssueCountProgress struct {
+				Open   int `json:"open"`
+				Closed int `json:"closed"`
+				Total  int `json:"total"`
+			} `json:"issueCountProgress"`
+			IssueEstimateProgress struct {
+				Open   int `json:"open"`
+				Closed int `json:"closed"`
+				Total  int `json:"total"`
+			} `json:"issueEstimateProgress"`
+		} `json:"node"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return exitcode.General("parsing epic progress", err)
+	}
+
+	if resp.Node == nil {
+		return exitcode.NotFoundError(fmt.Sprintf("epic %q not found", epicID))
+	}
+
+	epic := resp.Node
+
+	if output.IsJSON(outputFormat) {
+		return output.JSON(w, map[string]any{
+			"id":    epic.ID,
+			"title": epic.Issue.Title,
+			"state": epic.Issue.State,
+			"issues": map[string]any{
+				"open":   epic.IssueCountProgress.Open,
+				"closed": epic.IssueCountProgress.Closed,
+				"total":  epic.IssueCountProgress.Total,
+			},
+			"estimates": map[string]any{
+				"open":   epic.IssueEstimateProgress.Open,
+				"closed": epic.IssueEstimateProgress.Closed,
+				"total":  epic.IssueEstimateProgress.Total,
+			},
+		})
+	}
+
+	title := fmt.Sprintf("%s#%d: %s", epic.Issue.Repository.Name, epic.Issue.Number, epic.Issue.Title)
+	d := output.NewDetailWriter(w, "EPIC PROGRESS", title)
+	d.Fields([]output.KeyValue{
+		output.KV("State", formatEpicState(epic.Issue.State)),
+	})
+
+	if epic.IssueCountProgress.Total > 0 {
+		d.Section("PROGRESS")
+		fmt.Fprintf(w, "Issues:     %s\n", output.FormatProgress(epic.IssueCountProgress.Closed, epic.IssueCountProgress.Total))
+		if epic.IssueEstimateProgress.Total > 0 {
+			fmt.Fprintf(w, "Estimates:  %s\n", output.FormatProgress(epic.IssueEstimateProgress.Closed, epic.IssueEstimateProgress.Total))
+		}
+	} else {
+		d.Section("PROGRESS")
+		fmt.Fprintln(w, "No child issues.")
 	}
 
 	return nil

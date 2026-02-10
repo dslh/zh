@@ -22,7 +22,7 @@
 - [x] `zh epic assignee <epic>`
 - [x] `zh epic label <epic>`
 - [x] `zh epic key-date <epic>`
-- [ ] `zh epic alias <name> <epic>`
+- [x] `zh epic alias <name> <epic>`
 
 ## issue
 - [ ] `zh issue list`

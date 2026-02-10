@@ -342,28 +342,28 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] Tests: set, clear
 
 ### `zh epic assignee add <epic> <user>...`
-- [ ] Resolve user(s), add to epic
-- [ ] `--dry-run` support
-- [ ] `--continue-on-error` for batch operations
-- [ ] Tests: add, user not found, continue-on-error with partial failure
+- [x] Resolve user(s), add to epic
+- [x] `--dry-run` support
+- [x] `--continue-on-error` for batch operations
+- [x] Tests: add, user not found, continue-on-error with partial failure
 
 ### `zh epic assignee remove <epic> <user>...`
-- [ ] Resolve user(s), remove from epic
-- [ ] `--dry-run` support
-- [ ] `--continue-on-error` for batch operations
-- [ ] Tests: remove, user not assigned, continue-on-error with partial failure
+- [x] Resolve user(s), remove from epic
+- [x] `--dry-run` support
+- [x] `--continue-on-error` for batch operations
+- [x] Tests: remove, user not assigned, continue-on-error with partial failure
 
 ### `zh epic label add <epic> <label>...`
-- [ ] Resolve label(s), add to epic
-- [ ] `--dry-run` support
-- [ ] `--continue-on-error` for batch operations
-- [ ] Tests: add, label not found, continue-on-error with partial failure
+- [x] Resolve label(s), add to epic
+- [x] `--dry-run` support
+- [x] `--continue-on-error` for batch operations
+- [x] Tests: add, label not found, continue-on-error with partial failure
 
 ### `zh epic label remove <epic> <label>...`
-- [ ] Resolve label(s), remove from epic
-- [ ] `--dry-run` support
-- [ ] `--continue-on-error` for batch operations
-- [ ] Tests: remove, label not on epic, continue-on-error with partial failure
+- [x] Resolve label(s), remove from epic
+- [x] `--dry-run` support
+- [x] `--continue-on-error` for batch operations
+- [x] Tests: remove, label not on epic, continue-on-error with partial failure
 
 ### `zh epic key-date list <epic>`
 - [ ] List key dates (milestones) within an epic

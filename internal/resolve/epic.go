@@ -54,30 +54,21 @@ const listZenhubEpicsQuery = `query ListZenhubEpics($workspaceId: ID!, $first: I
   }
 }`
 
-const listRoadmapEpicsQuery = `query ListRoadmapEpics($workspaceId: ID!, $first: Int!, $after: String) {
+const listLegacyEpicsQuery = `query ListLegacyEpics($workspaceId: ID!, $first: Int!, $after: String) {
   workspace(id: $workspaceId) {
-    roadmap {
-      items(first: $first, after: $after) {
-        pageInfo {
-          hasNextPage
-          endCursor
-        }
-        nodes {
-          __typename
-          ... on ZenhubEpic {
-            id
-            title
-          }
-          ... on Epic {
-            id
-            issue {
-              title
-              number
-              repository {
-                name
-                ownerName
-              }
-            }
+    epics(first: $first, after: $after) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        id
+        issue {
+          title
+          number
+          repository {
+            name
+            ownerName
           }
         }
       }
@@ -87,9 +78,8 @@ const listRoadmapEpicsQuery = `query ListRoadmapEpics($workspaceId: ID!, $first:
 
 // FetchEpics fetches all epics for a workspace from the API and updates
 // the cache. It combines the zenhubEpics query (which returns all standalone
-// epics, including those not on the roadmap) with the roadmap items query
-// (which is the only way to discover legacy epics). Results are deduplicated
-// by ID so epics appearing in both sources are not listed twice.
+// epics) with the workspace.epics query (which returns legacy issue-backed
+// epics). Results are deduplicated by ID.
 func FetchEpics(client *api.Client, workspaceID string) ([]CachedEpic, error) {
 	seen := make(map[string]bool)
 	var allEpics []CachedEpic
@@ -104,13 +94,12 @@ func FetchEpics(client *api.Client, workspaceID string) ([]CachedEpic, error) {
 		allEpics = append(allEpics, e)
 	}
 
-	// 2. Fetch roadmap items to pick up legacy epics (and any ZenHub epics
-	//    already seen, which we skip).
-	roadmapEpics, err := fetchRoadmapEpics(client, workspaceID)
+	// 2. Fetch legacy epics via the dedicated query.
+	legacyEpics, err := fetchLegacyEpics(client, workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	for _, e := range roadmapEpics {
+	for _, e := range legacyEpics {
 		if !seen[e.ID] {
 			seen[e.ID] = true
 			allEpics = append(allEpics, e)
@@ -175,9 +164,8 @@ func fetchZenhubEpics(client *api.Client, workspaceID string) ([]CachedEpic, err
 	return result, nil
 }
 
-// fetchRoadmapEpics fetches epics from the workspace roadmap. This is
-// the only way to discover legacy (issue-backed) epics.
-func fetchRoadmapEpics(client *api.Client, workspaceID string) ([]CachedEpic, error) {
+// fetchLegacyEpics fetches legacy (issue-backed) epics via workspace.epics.
+func fetchLegacyEpics(client *api.Client, workspaceID string) ([]CachedEpic, error) {
 	var result []CachedEpic
 	var cursor *string
 
@@ -190,95 +178,54 @@ func fetchRoadmapEpics(client *api.Client, workspaceID string) ([]CachedEpic, er
 			vars["after"] = *cursor
 		}
 
-		data, err := client.Execute(listRoadmapEpicsQuery, vars)
+		data, err := client.Execute(listLegacyEpicsQuery, vars)
 		if err != nil {
-			return nil, exitcode.General("fetching roadmap epics", err)
+			return nil, exitcode.General("fetching legacy epics", err)
 		}
 
 		var resp struct {
 			Workspace struct {
-				Roadmap struct {
-					Items struct {
-						PageInfo struct {
-							HasNextPage bool   `json:"hasNextPage"`
-							EndCursor   string `json:"endCursor"`
-						} `json:"pageInfo"`
-						Nodes []json.RawMessage `json:"nodes"`
-					} `json:"items"`
-				} `json:"roadmap"`
+				Epics struct {
+					PageInfo struct {
+						HasNextPage bool   `json:"hasNextPage"`
+						EndCursor   string `json:"endCursor"`
+					} `json:"pageInfo"`
+					Nodes []struct {
+						ID    string `json:"id"`
+						Issue struct {
+							Title      string `json:"title"`
+							Number     int    `json:"number"`
+							Repository struct {
+								Name      string `json:"name"`
+								OwnerName string `json:"ownerName"`
+							} `json:"repository"`
+						} `json:"issue"`
+					} `json:"nodes"`
+				} `json:"epics"`
 			} `json:"workspace"`
 		}
 		if err := json.Unmarshal(data, &resp); err != nil {
-			return nil, exitcode.General("parsing roadmap epics response", err)
+			return nil, exitcode.General("parsing legacy epics response", err)
 		}
 
-		for _, raw := range resp.Workspace.Roadmap.Items.Nodes {
-			if epic, ok := parseRoadmapItem(raw); ok {
-				result = append(result, epic)
-			}
+		for _, n := range resp.Workspace.Epics.Nodes {
+			result = append(result, CachedEpic{
+				ID:          n.ID,
+				Title:       n.Issue.Title,
+				Type:        "legacy",
+				IssueNumber: n.Issue.Number,
+				RepoName:    n.Issue.Repository.Name,
+				RepoOwner:   n.Issue.Repository.OwnerName,
+			})
 		}
 
-		if !resp.Workspace.Roadmap.Items.PageInfo.HasNextPage {
+		if !resp.Workspace.Epics.PageInfo.HasNextPage {
 			break
 		}
-		cursor = &resp.Workspace.Roadmap.Items.PageInfo.EndCursor
+		cursor = &resp.Workspace.Epics.PageInfo.EndCursor
 	}
 
 	return result, nil
-}
-
-// parseRoadmapItem parses a single roadmap item node into a CachedEpic.
-// Returns false if the node is not an epic (e.g. a Project).
-func parseRoadmapItem(raw json.RawMessage) (CachedEpic, bool) {
-	var typed struct {
-		TypeName string `json:"__typename"`
-	}
-	if err := json.Unmarshal(raw, &typed); err != nil {
-		return CachedEpic{}, false
-	}
-
-	switch typed.TypeName {
-	case "ZenhubEpic":
-		var ze struct {
-			ID    string `json:"id"`
-			Title string `json:"title"`
-		}
-		if err := json.Unmarshal(raw, &ze); err != nil {
-			return CachedEpic{}, false
-		}
-		return CachedEpic{
-			ID:    ze.ID,
-			Title: ze.Title,
-			Type:  "zenhub",
-		}, true
-
-	case "Epic":
-		var le struct {
-			ID    string `json:"id"`
-			Issue struct {
-				Title      string `json:"title"`
-				Number     int    `json:"number"`
-				Repository struct {
-					Name      string `json:"name"`
-					OwnerName string `json:"ownerName"`
-				} `json:"repository"`
-			} `json:"issue"`
-		}
-		if err := json.Unmarshal(raw, &le); err != nil {
-			return CachedEpic{}, false
-		}
-		return CachedEpic{
-			ID:          le.ID,
-			Title:       le.Issue.Title,
-			Type:        "legacy",
-			IssueNumber: le.Issue.Number,
-			RepoName:    le.Issue.Repository.Name,
-			RepoOwner:   le.Issue.Repository.OwnerName,
-		}, true
-
-	default:
-		return CachedEpic{}, false
-	}
 }
 
 // FetchEpicsIntoCache stores pre-fetched epic entries in the cache.

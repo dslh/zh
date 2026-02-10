@@ -8,7 +8,7 @@
 - [x] `zh cache clear`
 
 ## epic
-- [ ] `zh epic list`
+- [x] `zh epic list`
 - [ ] `zh epic show <epic>`
 - [ ] `zh epic create`
 - [ ] `zh epic edit <epic>`

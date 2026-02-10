@@ -217,42 +217,28 @@ const listZenhubEpicsFullQuery = `query ListZenhubEpicsFull($workspaceId: ID!, $
   }
 }`
 
-const listRoadmapEpicsFullQuery = `query ListRoadmapEpicsFull($workspaceId: ID!, $first: Int!, $after: String) {
+const listLegacyEpicsFullQuery = `query ListLegacyEpicsFull($workspaceId: ID!, $first: Int!, $after: String) {
   workspace(id: $workspaceId) {
-    roadmap {
-      items(first: $first, after: $after) {
-        totalCount
-        pageInfo {
-          hasNextPage
-          endCursor
+    epics(first: $first, after: $after) {
+      totalCount
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        id
+        startOn
+        endOn
+        issue {
+          title
+          number
+          state
+          repository { name ownerName }
+          estimate { value }
         }
-        nodes {
-          __typename
-          ... on ZenhubEpic {
-            id
-            title
-            state
-            startOn
-            endOn
-            estimate { value }
-            zenhubIssueCountProgress { open closed total }
-            zenhubIssueEstimateProgress { open closed total }
-          }
-          ... on Epic {
-            id
-            startOn
-            endOn
-            issue {
-              title
-              number
-              state
-              repository { name ownerName }
-            }
-            childIssues(first: 1) { totalCount }
-            issueCountProgress { open closed total }
-            issueEstimateProgress { open closed total }
-          }
-        }
+        childIssues(first: 1) { totalCount }
+        issueCountProgress { open closed total }
+        issueEstimateProgress { open closed total }
       }
     }
   }
@@ -552,32 +538,34 @@ func fetchEpicList(client *api.Client, workspaceID string, limit int) ([]epicLis
 		allEpics = append(allEpics, e)
 	}
 
-	// 2. Fetch roadmap items to pick up legacy epics. Apply remaining limit
-	//    if one was specified.
-	roadmapLimit := 0
+	// 2. Fetch legacy epics. We always fetch at least the first page to get
+	//    an accurate totalCount, but limit the results we keep.
+	legacyLimit := 0
 	if limit > 0 {
-		roadmapLimit = limit - len(allEpics)
-		if roadmapLimit <= 0 {
-			return allEpics, zenhubTotal, nil
+		legacyLimit = limit - len(allEpics)
+		if legacyLimit < 1 {
+			legacyLimit = 1
 		}
 	}
-	roadmapEpics, _, err := fetchRoadmapEpicList(client, workspaceID, roadmapLimit)
+	legacyEpics, legacyTotal, err := fetchLegacyEpicList(client, workspaceID, legacyLimit)
 	if err != nil {
 		return nil, 0, err
 	}
-	for _, e := range roadmapEpics {
+	for _, e := range legacyEpics {
 		if !seen[e.ID] {
 			seen[e.ID] = true
 			allEpics = append(allEpics, e)
 		}
 	}
 
+	totalCount := zenhubTotal + legacyTotal
+
 	// Apply limit after merge if needed.
 	if limit > 0 && len(allEpics) > limit {
 		allEpics = allEpics[:limit]
 	}
 
-	return allEpics, len(allEpics), nil
+	return allEpics, totalCount, nil
 }
 
 // fetchZenhubEpicList fetches ZenHub epics with full details for the list view.
@@ -648,8 +636,8 @@ func fetchZenhubEpicList(client *api.Client, workspaceID string, limit int) ([]e
 	return allEpics, totalCount, nil
 }
 
-// fetchRoadmapEpicList fetches epics from the workspace roadmap with full details.
-func fetchRoadmapEpicList(client *api.Client, workspaceID string, limit int) ([]epicListEntry, int, error) {
+// fetchLegacyEpicList fetches legacy (issue-backed) epics with full details.
+func fetchLegacyEpicList(client *api.Client, workspaceID string, limit int) ([]epicListEntry, int, error) {
 	var allEpics []epicListEntry
 	var cursor *string
 	totalCount := 0
@@ -674,45 +662,88 @@ func fetchRoadmapEpicList(client *api.Client, workspaceID string, limit int) ([]
 			vars["after"] = *cursor
 		}
 
-		data, err := client.Execute(listRoadmapEpicsFullQuery, vars)
+		data, err := client.Execute(listLegacyEpicsFullQuery, vars)
 		if err != nil {
-			return nil, 0, exitcode.General("fetching roadmap epics", err)
+			return nil, 0, exitcode.General("fetching legacy epics", err)
 		}
 
 		var resp struct {
 			Workspace struct {
-				Roadmap struct {
-					Items struct {
-						TotalCount int `json:"totalCount"`
-						PageInfo   struct {
-							HasNextPage bool   `json:"hasNextPage"`
-							EndCursor   string `json:"endCursor"`
-						} `json:"pageInfo"`
-						Nodes []json.RawMessage `json:"nodes"`
-					} `json:"items"`
-				} `json:"roadmap"`
+				Epics struct {
+					TotalCount int `json:"totalCount"`
+					PageInfo   struct {
+						HasNextPage bool   `json:"hasNextPage"`
+						EndCursor   string `json:"endCursor"`
+					} `json:"pageInfo"`
+					Nodes []struct {
+						ID      string `json:"id"`
+						StartOn string `json:"startOn"`
+						EndOn   string `json:"endOn"`
+						Issue   struct {
+							Title      string `json:"title"`
+							Number     int    `json:"number"`
+							State      string `json:"state"`
+							Repository struct {
+								Name      string `json:"name"`
+								OwnerName string `json:"ownerName"`
+							} `json:"repository"`
+							Estimate *struct {
+								Value float64 `json:"value"`
+							} `json:"estimate"`
+						} `json:"issue"`
+						ChildIssues struct {
+							TotalCount int `json:"totalCount"`
+						} `json:"childIssues"`
+						IssueCountProgress *struct {
+							Open   int `json:"open"`
+							Closed int `json:"closed"`
+							Total  int `json:"total"`
+						} `json:"issueCountProgress"`
+						IssueEstimateProgress *struct {
+							Open   int `json:"open"`
+							Closed int `json:"closed"`
+							Total  int `json:"total"`
+						} `json:"issueEstimateProgress"`
+					} `json:"nodes"`
+				} `json:"epics"`
 			} `json:"workspace"`
 		}
 		if err := json.Unmarshal(data, &resp); err != nil {
-			return nil, 0, exitcode.General("parsing roadmap epics response", err)
+			return nil, 0, exitcode.General("parsing legacy epics response", err)
 		}
 
-		totalCount = resp.Workspace.Roadmap.Items.TotalCount
+		totalCount = resp.Workspace.Epics.TotalCount
 
-		for _, raw := range resp.Workspace.Roadmap.Items.Nodes {
-			if entry, ok := parseEpicListItem(raw); ok {
-				allEpics = append(allEpics, entry)
+		for _, n := range resp.Workspace.Epics.Nodes {
+			entry := epicListEntry{
+				ID:          n.ID,
+				Title:       n.Issue.Title,
+				Type:        "legacy",
+				State:       n.Issue.State,
+				StartOn:     n.StartOn,
+				EndOn:       n.EndOn,
+				Estimate:    n.Issue.Estimate,
+				IssueNumber: n.Issue.Number,
+				RepoName:    n.Issue.Repository.Name,
+				RepoOwner:   n.Issue.Repository.OwnerName,
 			}
+			if n.IssueCountProgress != nil {
+				entry.IssueCountProgress = *n.IssueCountProgress
+			}
+			if n.IssueEstimateProgress != nil {
+				entry.IssueEstimateProgress = *n.IssueEstimateProgress
+			}
+			allEpics = append(allEpics, entry)
 		}
 
-		if !resp.Workspace.Roadmap.Items.PageInfo.HasNextPage {
+		if !resp.Workspace.Epics.PageInfo.HasNextPage {
 			break
 		}
 		if limit > 0 && len(allEpics) >= limit {
 			break
 		}
 
-		cursor = &resp.Workspace.Roadmap.Items.PageInfo.EndCursor
+		cursor = &resp.Workspace.Epics.PageInfo.EndCursor
 	}
 
 	return allEpics, totalCount, nil
@@ -757,103 +788,6 @@ func parseZenhubEpicListItem(raw json.RawMessage) (epicListEntry, bool) {
 		IssueCountProgress:    ze.IssueCountProgress,
 		IssueEstimateProgress: ze.IssueEstimateProgress,
 	}, true
-}
-
-// parseEpicListItem parses a single roadmap item into an epicListEntry.
-// Returns false if the item is not an epic (e.g. a Project).
-func parseEpicListItem(raw json.RawMessage) (epicListEntry, bool) {
-	var typed struct {
-		TypeName string `json:"__typename"`
-	}
-	if err := json.Unmarshal(raw, &typed); err != nil {
-		return epicListEntry{}, false
-	}
-
-	switch typed.TypeName {
-	case "ZenhubEpic":
-		var ze struct {
-			ID       string `json:"id"`
-			Title    string `json:"title"`
-			State    string `json:"state"`
-			StartOn  string `json:"startOn"`
-			EndOn    string `json:"endOn"`
-			Estimate *struct {
-				Value float64 `json:"value"`
-			} `json:"estimate"`
-			IssueCountProgress struct {
-				Open   int `json:"open"`
-				Closed int `json:"closed"`
-				Total  int `json:"total"`
-			} `json:"zenhubIssueCountProgress"`
-			IssueEstimateProgress struct {
-				Open   int `json:"open"`
-				Closed int `json:"closed"`
-				Total  int `json:"total"`
-			} `json:"zenhubIssueEstimateProgress"`
-		}
-		if err := json.Unmarshal(raw, &ze); err != nil {
-			return epicListEntry{}, false
-		}
-		return epicListEntry{
-			ID:                    ze.ID,
-			Title:                 ze.Title,
-			Type:                  "zenhub",
-			State:                 ze.State,
-			StartOn:               ze.StartOn,
-			EndOn:                 ze.EndOn,
-			Estimate:              ze.Estimate,
-			IssueCountProgress:    ze.IssueCountProgress,
-			IssueEstimateProgress: ze.IssueEstimateProgress,
-		}, true
-
-	case "Epic":
-		var le struct {
-			ID      string `json:"id"`
-			StartOn string `json:"startOn"`
-			EndOn   string `json:"endOn"`
-			Issue   struct {
-				Title      string `json:"title"`
-				Number     int    `json:"number"`
-				State      string `json:"state"`
-				Repository struct {
-					Name      string `json:"name"`
-					OwnerName string `json:"ownerName"`
-				} `json:"repository"`
-			} `json:"issue"`
-			ChildIssues struct {
-				TotalCount int `json:"totalCount"`
-			} `json:"childIssues"`
-			IssueCountProgress struct {
-				Open   int `json:"open"`
-				Closed int `json:"closed"`
-				Total  int `json:"total"`
-			} `json:"issueCountProgress"`
-			IssueEstimateProgress struct {
-				Open   int `json:"open"`
-				Closed int `json:"closed"`
-				Total  int `json:"total"`
-			} `json:"issueEstimateProgress"`
-		}
-		if err := json.Unmarshal(raw, &le); err != nil {
-			return epicListEntry{}, false
-		}
-		return epicListEntry{
-			ID:                    le.ID,
-			Title:                 le.Issue.Title,
-			Type:                  "legacy",
-			State:                 le.Issue.State,
-			StartOn:               le.StartOn,
-			EndOn:                 le.EndOn,
-			IssueCountProgress:    le.IssueCountProgress,
-			IssueEstimateProgress: le.IssueEstimateProgress,
-			IssueNumber:           le.Issue.Number,
-			RepoName:              le.Issue.Repository.Name,
-			RepoOwner:             le.Issue.Repository.OwnerName,
-		}, true
-
-	default:
-		return epicListEntry{}, false
-	}
 }
 
 // cacheEpicsFromList stores epic entries in the cache for resolution.

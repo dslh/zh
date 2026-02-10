@@ -188,17 +188,15 @@ func TestEpicResolveNotFoundRefreshesCache(t *testing.T) {
 			},
 		},
 	})
-	ms.HandleQuery("ListRoadmapEpics", map[string]any{
+	ms.HandleQuery("ListLegacyEpics", map[string]any{
 		"data": map[string]any{
 			"workspace": map[string]any{
-				"roadmap": map[string]any{
-					"items": map[string]any{
-						"pageInfo": map[string]any{
-							"hasNextPage": false,
-							"endCursor":   "",
-						},
-						"nodes": []any{},
+				"epics": map[string]any{
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
 					},
+					"nodes": []any{},
 				},
 			},
 		},
@@ -247,17 +245,15 @@ func TestEpicResolveNotFoundAfterRefresh(t *testing.T) {
 			},
 		},
 	})
-	ms.HandleQuery("ListRoadmapEpics", map[string]any{
+	ms.HandleQuery("ListLegacyEpics", map[string]any{
 		"data": map[string]any{
 			"workspace": map[string]any{
-				"roadmap": map[string]any{
-					"items": map[string]any{
-						"pageInfo": map[string]any{
-							"hasNextPage": false,
-							"endCursor":   "",
-						},
-						"nodes": []any{},
+				"epics": map[string]any{
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
 					},
+					"nodes": []any{},
 				},
 			},
 		},
@@ -299,37 +295,24 @@ func TestFetchEpics(t *testing.T) {
 			},
 		},
 	})
-	ms.HandleQuery("ListRoadmapEpics", map[string]any{
+	ms.HandleQuery("ListLegacyEpics", map[string]any{
 		"data": map[string]any{
 			"workspace": map[string]any{
-				"roadmap": map[string]any{
-					"items": map[string]any{
-						"pageInfo": map[string]any{
-							"hasNextPage": false,
-							"endCursor":   "",
-						},
-						"nodes": []any{
-							map[string]any{
-								"__typename": "ZenhubEpic",
-								"id":         "e1",
-								"title":      "ZenHub Epic",
-							},
-							map[string]any{
-								"__typename": "Epic",
-								"id":         "e2",
-								"issue": map[string]any{
-									"title":  "Legacy Epic",
-									"number": 99,
-									"repository": map[string]any{
-										"name":      "mpt",
-										"ownerName": "gohiring",
-									},
+				"epics": map[string]any{
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
+					},
+					"nodes": []any{
+						map[string]any{
+							"id": "e2",
+							"issue": map[string]any{
+								"title":  "Legacy Epic",
+								"number": 99,
+								"repository": map[string]any{
+									"name":      "mpt",
+									"ownerName": "gohiring",
 								},
-							},
-							map[string]any{
-								"__typename": "Project",
-								"id":         "p1",
-								"name":       "Some Project",
 							},
 						},
 					},
@@ -344,7 +327,6 @@ func TestFetchEpics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Projects should be filtered out, ZenHub epic deduplicated, only unique epics remain
 	if len(epics) != 2 {
 		t.Errorf("expected 2 epics, got %d", len(epics))
 	}
@@ -354,7 +336,7 @@ func TestFetchEpics(t *testing.T) {
 		t.Errorf("expected zenhub epic, got %+v", epics[0])
 	}
 
-	// Verify legacy epic (from roadmap query)
+	// Verify legacy epic (from epics query)
 	if epics[1].Type != "legacy" || epics[1].Title != "Legacy Epic" || epics[1].IssueNumber != 99 {
 		t.Errorf("expected legacy epic, got %+v", epics[1])
 	}
@@ -400,23 +382,15 @@ func TestFetchEpicsDeduplicates(t *testing.T) {
 			},
 		},
 	})
-	ms.HandleQuery("ListRoadmapEpics", map[string]any{
+	ms.HandleQuery("ListLegacyEpics", map[string]any{
 		"data": map[string]any{
 			"workspace": map[string]any{
-				"roadmap": map[string]any{
-					"items": map[string]any{
-						"pageInfo": map[string]any{
-							"hasNextPage": false,
-							"endCursor":   "",
-						},
-						"nodes": []any{
-							map[string]any{
-								"__typename": "ZenhubEpic",
-								"id":         "e1",
-								"title":      "Shared Epic",
-							},
-						},
+				"epics": map[string]any{
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
 					},
+					"nodes": []any{},
 				},
 			},
 		},
@@ -429,6 +403,6 @@ func TestFetchEpicsDeduplicates(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(epics) != 2 {
-		t.Errorf("expected 2 epics (deduplicated), got %d", len(epics))
+		t.Errorf("expected 2 epics, got %d", len(epics))
 	}
 }

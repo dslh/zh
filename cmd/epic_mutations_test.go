@@ -1017,17 +1017,15 @@ func handleEpicResolutionForMutations(ms *testutil.MockServer) {
 			},
 		},
 	})
-	ms.HandleQuery("ListRoadmapEpics", map[string]any{
+	ms.HandleQuery("ListLegacyEpics", map[string]any{
 		"data": map[string]any{
 			"workspace": map[string]any{
-				"roadmap": map[string]any{
-					"items": map[string]any{
-						"pageInfo": map[string]any{
-							"hasNextPage": false,
-							"endCursor":   "",
-						},
-						"nodes": []any{},
+				"epics": map[string]any{
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
 					},
+					"nodes": []any{},
 				},
 			},
 		},

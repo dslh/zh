@@ -145,18 +145,16 @@ func TestEpicListEmpty(t *testing.T) {
 			},
 		},
 	})
-	ms.HandleQuery("ListRoadmapEpicsFull", map[string]any{
+	ms.HandleQuery("ListLegacyEpicsFull", map[string]any{
 		"data": map[string]any{
 			"workspace": map[string]any{
-				"roadmap": map[string]any{
-					"items": map[string]any{
-						"totalCount": 0,
-						"pageInfo": map[string]any{
-							"hasNextPage": false,
-							"endCursor":   "",
-						},
-						"nodes": []any{},
+				"epics": map[string]any{
+					"totalCount": 0,
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
 					},
+					"nodes": []any{},
 				},
 			},
 		},
@@ -677,63 +675,42 @@ func handleEpicListQueries(ms *testutil.MockServer) {
 			},
 		},
 	})
-	ms.HandleQuery("ListRoadmapEpicsFull", map[string]any{
+	ms.HandleQuery("ListLegacyEpicsFull", map[string]any{
 		"data": map[string]any{
 			"workspace": map[string]any{
-				"roadmap": map[string]any{
-					"items": map[string]any{
-						"totalCount": 2,
-						"pageInfo": map[string]any{
-							"hasNextPage": false,
-							"endCursor":   "",
-						},
-						"nodes": []any{
-							map[string]any{
-								"__typename": "ZenhubEpic",
-								"id":         "epic-zen-1",
-								"title":      "Q1 Platform Improvements",
-								"state":      "IN_PROGRESS",
-								"startOn":    "2026-01-01",
-								"endOn":      "2026-03-31",
-								"estimate":   map[string]any{"value": 34},
-								"zenhubIssueCountProgress": map[string]any{
-									"open":   8,
-									"closed": 12,
-									"total":  20,
-								},
-								"zenhubIssueEstimateProgress": map[string]any{
-									"open":   21,
-									"closed": 34,
-									"total":  55,
+				"epics": map[string]any{
+					"totalCount": 1,
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
+					},
+					"nodes": []any{
+						map[string]any{
+							"id":      "epic-legacy-1",
+							"startOn": nil,
+							"endOn":   nil,
+							"issue": map[string]any{
+								"title":    "Bug Tracker Improvements",
+								"number":   1,
+								"state":    "OPEN",
+								"estimate": nil,
+								"repository": map[string]any{
+									"name":      "task-tracker",
+									"ownerName": "dlakehammond",
 								},
 							},
-							map[string]any{
-								"__typename": "Epic",
-								"id":         "epic-legacy-1",
-								"startOn":    nil,
-								"endOn":      nil,
-								"issue": map[string]any{
-									"title":  "Bug Tracker Improvements",
-									"number": 1,
-									"state":  "OPEN",
-									"repository": map[string]any{
-										"name":      "task-tracker",
-										"ownerName": "dlakehammond",
-									},
-								},
-								"childIssues": map[string]any{
-									"totalCount": 5,
-								},
-								"issueCountProgress": map[string]any{
-									"open":   3,
-									"closed": 2,
-									"total":  5,
-								},
-								"issueEstimateProgress": map[string]any{
-									"open":   0,
-									"closed": 0,
-									"total":  0,
-								},
+							"childIssues": map[string]any{
+								"totalCount": 5,
+							},
+							"issueCountProgress": map[string]any{
+								"open":   3,
+								"closed": 2,
+								"total":  5,
+							},
+							"issueEstimateProgress": map[string]any{
+								"open":   0,
+								"closed": 0,
+								"total":  0,
 							},
 						},
 					},
@@ -764,26 +741,23 @@ func handleEpicResolutionQueries(ms *testutil.MockServer) {
 			},
 		},
 	})
-	ms.HandleQuery("ListRoadmapEpics", map[string]any{
+	ms.HandleQuery("ListLegacyEpics", map[string]any{
 		"data": map[string]any{
 			"workspace": map[string]any{
-				"roadmap": map[string]any{
-					"items": map[string]any{
-						"pageInfo": map[string]any{
-							"hasNextPage": false,
-							"endCursor":   "",
-						},
-						"nodes": []any{
-							map[string]any{
-								"__typename": "Epic",
-								"id":         "epic-legacy-1",
-								"issue": map[string]any{
-									"title":  "Bug Tracker Improvements",
-									"number": 1,
-									"repository": map[string]any{
-										"name":      "task-tracker",
-										"ownerName": "dlakehammond",
-									},
+				"epics": map[string]any{
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
+					},
+					"nodes": []any{
+						map[string]any{
+							"id": "epic-legacy-1",
+							"issue": map[string]any{
+								"title":  "Bug Tracker Improvements",
+								"number": 1,
+								"repository": map[string]any{
+									"name":      "task-tracker",
+									"ownerName": "dlakehammond",
 								},
 							},
 						},

@@ -31,9 +31,9 @@ type epicListEntry struct {
 		Total  int `json:"total"`
 	} `json:"issueCountProgress"`
 	IssueEstimateProgress struct {
-		Open   int `json:"open"`
-		Closed int `json:"closed"`
-		Total  int `json:"total"`
+		Open   float64 `json:"open"`
+		Closed float64 `json:"closed"`
+		Total  float64 `json:"total"`
 	} `json:"issueEstimateProgress"`
 
 	// Legacy epic fields
@@ -89,9 +89,9 @@ type epicDetailZenhub struct {
 		Total  int `json:"total"`
 	} `json:"zenhubIssueCountProgress"`
 	IssueEstimateProgress struct {
-		Open   int `json:"open"`
-		Closed int `json:"closed"`
-		Total  int `json:"total"`
+		Open   float64 `json:"open"`
+		Closed float64 `json:"closed"`
+		Total  float64 `json:"total"`
 	} `json:"zenhubIssueEstimateProgress"`
 	BlockingItems struct {
 		TotalCount int               `json:"totalCount"`
@@ -151,9 +151,9 @@ type epicDetailLegacy struct {
 		Total  int `json:"total"`
 	} `json:"issueCountProgress"`
 	IssueEstimateProgress struct {
-		Open   int `json:"open"`
-		Closed int `json:"closed"`
-		Total  int `json:"total"`
+		Open   float64 `json:"open"`
+		Closed float64 `json:"closed"`
+		Total  float64 `json:"total"`
 	} `json:"issueEstimateProgress"`
 }
 
@@ -700,9 +700,9 @@ func fetchLegacyEpicList(client *api.Client, workspaceID string, limit int) ([]e
 							Total  int `json:"total"`
 						} `json:"issueCountProgress"`
 						IssueEstimateProgress *struct {
-							Open   int `json:"open"`
-							Closed int `json:"closed"`
-							Total  int `json:"total"`
+							Open   float64 `json:"open"`
+							Closed float64 `json:"closed"`
+							Total  float64 `json:"total"`
 						} `json:"issueEstimateProgress"`
 					} `json:"nodes"`
 				} `json:"epics"`
@@ -766,9 +766,9 @@ func parseZenhubEpicListItem(raw json.RawMessage) (epicListEntry, bool) {
 			Total  int `json:"total"`
 		} `json:"zenhubIssueCountProgress"`
 		IssueEstimateProgress struct {
-			Open   int `json:"open"`
-			Closed int `json:"closed"`
-			Total  int `json:"total"`
+			Open   float64 `json:"open"`
+			Closed float64 `json:"closed"`
+			Total  float64 `json:"total"`
 		} `json:"zenhubIssueEstimateProgress"`
 	}
 	if err := json.Unmarshal(raw, &ze); err != nil {
@@ -983,7 +983,7 @@ func runEpicShowZenhub(client *api.Client, workspaceID, epicID string, w writerF
 		d.Section("PROGRESS")
 		fmt.Fprintf(w, "Issues:     %s\n", output.FormatProgress(epic.IssueCountProgress.Closed, epic.IssueCountProgress.Total))
 		if epic.IssueEstimateProgress.Total > 0 {
-			fmt.Fprintf(w, "Estimates:  %s\n", output.FormatProgress(epic.IssueEstimateProgress.Closed, epic.IssueEstimateProgress.Total))
+			fmt.Fprintf(w, "Estimates:  %s\n", output.FormatProgress(int(epic.IssueEstimateProgress.Closed), int(epic.IssueEstimateProgress.Total)))
 		}
 	}
 
@@ -1111,7 +1111,7 @@ func runEpicShowLegacy(client *api.Client, epicID string, w writerFlusher) error
 		d.Section("PROGRESS")
 		fmt.Fprintf(w, "Issues:     %s\n", output.FormatProgress(epic.IssueCountProgress.Closed, epic.IssueCountProgress.Total))
 		if epic.IssueEstimateProgress.Total > 0 {
-			fmt.Fprintf(w, "Estimates:  %s\n", output.FormatProgress(epic.IssueEstimateProgress.Closed, epic.IssueEstimateProgress.Total))
+			fmt.Fprintf(w, "Estimates:  %s\n", output.FormatProgress(int(epic.IssueEstimateProgress.Closed), int(epic.IssueEstimateProgress.Total)))
 		}
 	}
 
@@ -1134,7 +1134,7 @@ func runEpicShowLegacy(client *api.Client, epicID string, w writerFlusher) error
 }
 
 // GraphQL queries for epic progress
-const epicProgressZenhubQuery = `query GetZenhubEpicProgress($id: ID!, $workspaceId: ID!) {
+const epicProgressZenhubQuery = `query GetZenhubEpicProgress($id: ID!) {
   node(id: $id) {
     ... on ZenhubEpic {
       id
@@ -1191,8 +1191,7 @@ func runEpicProgress(cmd *cobra.Command, args []string) error {
 // runEpicProgressZenhub shows progress for a ZenHub epic.
 func runEpicProgressZenhub(client *api.Client, workspaceID, epicID string, w writerFlusher) error {
 	data, err := client.Execute(epicProgressZenhubQuery, map[string]any{
-		"id":          epicID,
-		"workspaceId": workspaceID,
+		"id": epicID,
 	})
 	if err != nil {
 		return exitcode.General("fetching epic progress", err)
@@ -1212,9 +1211,9 @@ func runEpicProgressZenhub(client *api.Client, workspaceID, epicID string, w wri
 				Total  int `json:"total"`
 			} `json:"zenhubIssueCountProgress"`
 			IssueEstimateProgress struct {
-				Open   int `json:"open"`
-				Closed int `json:"closed"`
-				Total  int `json:"total"`
+				Open   float64 `json:"open"`
+				Closed float64 `json:"closed"`
+				Total  float64 `json:"total"`
 			} `json:"zenhubIssueEstimateProgress"`
 		} `json:"node"`
 	}
@@ -1255,7 +1254,7 @@ func runEpicProgressZenhub(client *api.Client, workspaceID, epicID string, w wri
 		d.Section("PROGRESS")
 		fmt.Fprintf(w, "Issues:     %s\n", output.FormatProgress(epic.IssueCountProgress.Closed, epic.IssueCountProgress.Total))
 		if epic.IssueEstimateProgress.Total > 0 {
-			fmt.Fprintf(w, "Estimates:  %s\n", output.FormatProgress(epic.IssueEstimateProgress.Closed, epic.IssueEstimateProgress.Total))
+			fmt.Fprintf(w, "Estimates:  %s\n", output.FormatProgress(int(epic.IssueEstimateProgress.Closed), int(epic.IssueEstimateProgress.Total)))
 		}
 	} else {
 		d.Section("PROGRESS")
@@ -1295,9 +1294,9 @@ func runEpicProgressLegacy(client *api.Client, epicID string, w writerFlusher) e
 				Total  int `json:"total"`
 			} `json:"issueCountProgress"`
 			IssueEstimateProgress struct {
-				Open   int `json:"open"`
-				Closed int `json:"closed"`
-				Total  int `json:"total"`
+				Open   float64 `json:"open"`
+				Closed float64 `json:"closed"`
+				Total  float64 `json:"total"`
 			} `json:"issueEstimateProgress"`
 		} `json:"node"`
 	}
@@ -1339,7 +1338,7 @@ func runEpicProgressLegacy(client *api.Client, epicID string, w writerFlusher) e
 		d.Section("PROGRESS")
 		fmt.Fprintf(w, "Issues:     %s\n", output.FormatProgress(epic.IssueCountProgress.Closed, epic.IssueCountProgress.Total))
 		if epic.IssueEstimateProgress.Total > 0 {
-			fmt.Fprintf(w, "Estimates:  %s\n", output.FormatProgress(epic.IssueEstimateProgress.Closed, epic.IssueEstimateProgress.Total))
+			fmt.Fprintf(w, "Estimates:  %s\n", output.FormatProgress(int(epic.IssueEstimateProgress.Closed), int(epic.IssueEstimateProgress.Total)))
 		}
 	} else {
 		d.Section("PROGRESS")

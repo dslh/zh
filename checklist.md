@@ -10,7 +10,7 @@
 ## epic
 - [x] `zh epic list`
 - [x] `zh epic show <epic>`
-- [ ] `zh epic create`
+- [x] `zh epic create`
 - [ ] `zh epic edit <epic>`
 - [ ] `zh epic delete <epic>`
 - [ ] `zh epic set-state <epic> <state>`

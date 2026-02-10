@@ -275,15 +275,15 @@ Build the resolution layer now — almost every subsequent command depends on it
 ## Phase 11: Epic commands (ZenHub epics only — legacy deferred)
 
 ### `zh epic list`
-- [ ] List epics in workspace (ID, title, state, issue count)
-- [ ] `--limit` and `--all` flags (default 100 results)
-- [ ] Cache epic list
-- [ ] Tests: list output, empty workspace
+- [x] List epics in workspace (ID, title, state, issue count)
+- [x] `--limit` and `--all` flags (default 100 results)
+- [x] Cache epic list
+- [x] Tests: list output, empty workspace
 
 ### `zh epic show <epic>`
-- [ ] Resolve epic, display: title, state, body, dates, child issues, assignees, labels, estimate
+- [x] Resolve epic, display: title, state, body, dates, child issues, assignees, labels, estimate
 - [ ] `--interactive` mode
-- [ ] Tests: full output, interactive
+- [x] Tests: full output, interactive
 
 ### `zh epic create <title>`
 - [ ] `--body`, `--repo` flags
@@ -325,8 +325,8 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [ ] Tests: remove, issue not in epic, continue-on-error with partial failure
 
 ### `zh epic alias <epic> <alias>`
-- [ ] Write alias to config
-- [ ] Tests: alias creation, alias used in resolution
+- [x] Write alias to config
+- [x] Tests: alias creation, alias used in resolution
 
 ### `zh epic progress <epic>`
 - [ ] Show completion: issue count (closed/total), estimate progress (completed/total)

@@ -154,6 +154,63 @@ func TestPriorityListNoWorkspace(t *testing.T) {
 	}
 }
 
+func TestFormatPriorityColor(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"ff5630", "#ff5630"},
+		{"#ff5630", "#ff5630"},
+		{"var(--zh-theme-color-red-primary)", "#ff5630"},
+		{"var(--zh-theme-color-green-primary)", "#36b37e"},
+		{"var(--zh-theme-color-blue-primary)", "#0065ff"},
+		{"var(--zh-theme-color-unknown-primary)", "unknown"},
+	}
+
+	for _, tt := range tests {
+		got := formatPriorityColor(tt.input)
+		if got != tt.want {
+			t.Errorf("formatPriorityColor(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestPriorityListCSSVarColors(t *testing.T) {
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("GetWorkspacePriorities", map[string]any{
+		"data": map[string]any{
+			"workspace": map[string]any{
+				"prioritiesConnection": map[string]any{
+					"nodes": []any{
+						map[string]any{"id": "pr1", "name": "Critical", "color": "var(--zh-theme-color-red-primary)", "description": ""},
+						map[string]any{"id": "pr2", "name": "Normal", "color": "var(--zh-theme-color-green-primary)", "description": ""},
+					},
+				},
+			},
+		},
+	})
+	setupPriorityTest(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"priority", "list"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("priority list returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "#ff5630") {
+		t.Error("output should map CSS var red to #ff5630")
+	}
+	if !strings.Contains(out, "#36b37e") {
+		t.Error("output should map CSS var green to #36b37e")
+	}
+	if !strings.Contains(out, "Total: 2 priority(s)") {
+		t.Errorf("unexpected footer, got: %s", out)
+	}
+}
+
 // --- test data ---
 
 func priorityListResponse() map[string]any {

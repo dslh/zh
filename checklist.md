@@ -53,7 +53,7 @@
 - [x] `zh pipeline alias <name> <pipeline>`
 
 ## priority
-- [ ] `zh priority list`
+- [x] `zh priority list`
 
 ## sprint
 - [ ] `zh sprint list`

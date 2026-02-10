@@ -66,11 +66,40 @@ func runPriorityList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// formatPriorityColor formats a hex color code for display.
-// Ensures a '#' prefix if the color looks like a hex code.
+// cssVarColors maps ZenHub CSS theme variables to hex color codes.
+var cssVarColors = map[string]string{
+	"var(--zh-theme-color-red-primary)":    "#ff5630",
+	"var(--zh-theme-color-orange-primary)": "#ff7452",
+	"var(--zh-theme-color-yellow-primary)": "#ffab00",
+	"var(--zh-theme-color-green-primary)":  "#36b37e",
+	"var(--zh-theme-color-teal-primary)":   "#00b8d9",
+	"var(--zh-theme-color-blue-primary)":   "#0065ff",
+	"var(--zh-theme-color-purple-primary)": "#6554c0",
+}
+
+// formatPriorityColor formats a color value for display.
+// Handles hex codes (with or without '#' prefix) and ZenHub CSS variable references.
 func formatPriorityColor(color string) string {
 	if strings.HasPrefix(color, "#") {
 		return color
 	}
+
+	if strings.HasPrefix(color, "var(") {
+		if hex, ok := cssVarColors[color]; ok {
+			return hex
+		}
+		// Extract color name from unknown CSS variable
+		// e.g. "var(--zh-theme-color-red-primary)" → "red"
+		name := color
+		name = strings.TrimPrefix(name, "var(")
+		name = strings.TrimSuffix(name, ")")
+		name = strings.TrimPrefix(name, "--zh-theme-color-")
+		if idx := strings.LastIndex(name, "-"); idx >= 0 {
+			name = name[:idx]
+		}
+		return name
+	}
+
+	// Bare hex code
 	return "#" + color
 }

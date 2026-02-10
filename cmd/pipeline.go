@@ -179,6 +179,97 @@ const pipelineIssuesQuery = `query GetPipelineIssues(
   }
 }`
 
+// Automation types
+
+type pipelineAutomationNode struct {
+	ID             string          `json:"id"`
+	ElementDetails json.RawMessage `json:"elementDetails"`
+	CreatedAt      string          `json:"createdAt"`
+	UpdatedAt      string          `json:"updatedAt"`
+}
+
+type p2pAutomationSourceNode struct {
+	ID                  string `json:"id"`
+	DestinationPipeline struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"destinationPipeline"`
+	CreatedAt string `json:"createdAt"`
+}
+
+type p2pAutomationDestNode struct {
+	ID             string `json:"id"`
+	SourcePipeline struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"sourcePipeline"`
+	CreatedAt string `json:"createdAt"`
+}
+
+type pipelineAutomationsData struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	PipelineConfig *struct {
+		PipelineAutomations struct {
+			TotalCount int                      `json:"totalCount"`
+			Nodes      []pipelineAutomationNode `json:"nodes"`
+		} `json:"pipelineAutomations"`
+	} `json:"pipelineConfiguration"`
+	P2PSources struct {
+		TotalCount int                       `json:"totalCount"`
+		Nodes      []p2pAutomationSourceNode `json:"nodes"`
+	} `json:"pipelineToPipelineAutomationSources"`
+	P2PDestinations struct {
+		TotalCount int                     `json:"totalCount"`
+		Nodes      []p2pAutomationDestNode `json:"nodes"`
+	} `json:"pipelineToPipelineAutomationDestinations"`
+}
+
+// GraphQL query for pipeline automations
+const pipelineAutomationsQuery = `query PipelineAutomations($workspaceId: ID!) {
+  workspace(id: $workspaceId) {
+    pipelinesConnection(first: 50) {
+      nodes {
+        id
+        name
+        pipelineConfiguration {
+          pipelineAutomations(first: 50) {
+            totalCount
+            nodes {
+              id
+              elementDetails
+              createdAt
+              updatedAt
+            }
+          }
+        }
+        pipelineToPipelineAutomationSources(first: 50) {
+          totalCount
+          nodes {
+            id
+            destinationPipeline {
+              id
+              name
+            }
+            createdAt
+          }
+        }
+        pipelineToPipelineAutomationDestinations(first: 50) {
+          totalCount
+          nodes {
+            id
+            sourcePipeline {
+              id
+              name
+            }
+            createdAt
+          }
+        }
+      }
+    }
+  }
+}`
+
 // Commands
 
 var pipelineCmd = &cobra.Command{
@@ -202,6 +293,14 @@ var pipelineShowCmd = &cobra.Command{
 	RunE:  runPipelineShow,
 }
 
+var pipelineAutomationsCmd = &cobra.Command{
+	Use:   "automations <name>",
+	Short: "List configured automations for a pipeline",
+	Long:  `Display event automations and pipeline-to-pipeline automations configured for the specified pipeline. Resolve pipeline by name, substring, alias, or ID.`,
+	Args:  cobra.ExactArgs(1),
+	RunE:  runPipelineAutomations,
+}
+
 var (
 	pipelineShowLimit int
 	pipelineShowAll   bool
@@ -213,6 +312,7 @@ func init() {
 
 	pipelineCmd.AddCommand(pipelineListCmd)
 	pipelineCmd.AddCommand(pipelineShowCmd)
+	pipelineCmd.AddCommand(pipelineAutomationsCmd)
 	rootCmd.AddCommand(pipelineCmd)
 }
 
@@ -522,6 +622,141 @@ func repoNamesAmbiguous(issues []pipelineIssueNode) bool {
 		seen[name] = owner
 	}
 	return false
+}
+
+// runPipelineAutomations implements `zh pipeline automations <name>`.
+func runPipelineAutomations(cmd *cobra.Command, args []string) error {
+	cfg, err := requireWorkspace()
+	if err != nil {
+		return err
+	}
+
+	client := newClient(cfg, cmd)
+	w := cmd.OutOrStdout()
+
+	// Resolve the pipeline
+	resolved, err := resolve.Pipeline(client, cfg.Workspace, args[0], cfg.Aliases.Pipelines)
+	if err != nil {
+		return err
+	}
+
+	// Fetch all pipelines with automation data (API doesn't support single-pipeline query)
+	data, err := client.Execute(pipelineAutomationsQuery, map[string]any{
+		"workspaceId": cfg.Workspace,
+	})
+	if err != nil {
+		return exitcode.General("fetching pipeline automations", err)
+	}
+
+	var resp struct {
+		Workspace struct {
+			PipelinesConnection struct {
+				Nodes []pipelineAutomationsData `json:"nodes"`
+			} `json:"pipelinesConnection"`
+		} `json:"workspace"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return exitcode.General("parsing automations response", err)
+	}
+
+	// Find the target pipeline in the result
+	var target *pipelineAutomationsData
+	for i := range resp.Workspace.PipelinesConnection.Nodes {
+		if resp.Workspace.PipelinesConnection.Nodes[i].ID == resolved.ID {
+			target = &resp.Workspace.PipelinesConnection.Nodes[i]
+			break
+		}
+	}
+	if target == nil {
+		return exitcode.NotFoundError(fmt.Sprintf("pipeline %q not found in automations response", resolved.Name))
+	}
+
+	// Count automations
+	eventCount := 0
+	if target.PipelineConfig != nil {
+		eventCount = target.PipelineConfig.PipelineAutomations.TotalCount
+	}
+	p2pCount := target.P2PSources.TotalCount + target.P2PDestinations.TotalCount
+
+	if output.IsJSON(outputFormat) {
+		jsonOut := struct {
+			Pipeline         string                    `json:"pipeline"`
+			PipelineID       string                    `json:"pipelineId"`
+			EventAutomations []pipelineAutomationNode  `json:"eventAutomations"`
+			P2PSources       []p2pAutomationSourceNode `json:"p2pSources"`
+			P2PDestinations  []p2pAutomationDestNode   `json:"p2pDestinations"`
+		}{
+			Pipeline:        target.Name,
+			PipelineID:      target.ID,
+			P2PSources:      target.P2PSources.Nodes,
+			P2PDestinations: target.P2PDestinations.Nodes,
+		}
+		if target.PipelineConfig != nil {
+			jsonOut.EventAutomations = target.PipelineConfig.PipelineAutomations.Nodes
+		}
+		if jsonOut.EventAutomations == nil {
+			jsonOut.EventAutomations = []pipelineAutomationNode{}
+		}
+		if jsonOut.P2PSources == nil {
+			jsonOut.P2PSources = []p2pAutomationSourceNode{}
+		}
+		if jsonOut.P2PDestinations == nil {
+			jsonOut.P2PDestinations = []p2pAutomationDestNode{}
+		}
+		return output.JSON(w, jsonOut)
+	}
+
+	// No automations at all
+	if eventCount == 0 && p2pCount == 0 {
+		d := output.NewDetailWriter(w, "AUTOMATIONS", target.Name)
+		_ = d
+		fmt.Fprintln(w, "No automations configured.")
+		return nil
+	}
+
+	d := output.NewDetailWriter(w, "AUTOMATIONS", target.Name)
+
+	// Event automations section
+	if eventCount > 0 {
+		d.Section("EVENT AUTOMATIONS")
+		for _, a := range target.PipelineConfig.PipelineAutomations.Nodes {
+			createdAt := ""
+			if t, err := time.Parse(time.RFC3339, a.CreatedAt); err == nil {
+				createdAt = output.FormatDate(t)
+			}
+			fmt.Fprintf(w, "  %s  %s\n", output.Cyan(a.ID), output.Dim(createdAt))
+			fmt.Fprintf(w, "  %s\n\n", string(a.ElementDetails))
+		}
+	} else {
+		d.Section("EVENT AUTOMATIONS")
+		fmt.Fprintln(w, "No event automations configured.")
+	}
+
+	// Pipeline-to-pipeline automations section
+	if p2pCount > 0 {
+		d.Section("PIPELINE-TO-PIPELINE AUTOMATIONS")
+		lw := output.NewListWriter(w, "DIRECTION", "PIPELINE", "CREATED")
+		for _, s := range target.P2PSources.Nodes {
+			createdAt := output.TableMissing
+			if t, err := time.Parse(time.RFC3339, s.CreatedAt); err == nil {
+				createdAt = output.FormatDate(t)
+			}
+			lw.Row("Moves to", s.DestinationPipeline.Name, createdAt)
+		}
+		for _, d := range target.P2PDestinations.Nodes {
+			createdAt := output.TableMissing
+			if t, err := time.Parse(time.RFC3339, d.CreatedAt); err == nil {
+				createdAt = output.FormatDate(t)
+			}
+			lw.Row("Moves from", d.SourcePipeline.Name, createdAt)
+		}
+		lw.Flush()
+	} else {
+		d.Section("PIPELINE-TO-PIPELINE AUTOMATIONS")
+		fmt.Fprintln(w, "No pipeline-to-pipeline automations configured.")
+	}
+
+	return nil
 }
 
 // formatStage formats a pipeline stage enum value for display.

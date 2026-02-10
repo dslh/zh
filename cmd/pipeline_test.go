@@ -387,7 +387,287 @@ func TestPipelineHelpText(t *testing.T) {
 	}
 }
 
+// --- pipeline automations ---
+
+func TestPipelineAutomations(t *testing.T) {
+	resetPipelineFlags()
+
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListPipelines", pipelineResolutionResponse())
+	ms.HandleQuery("PipelineAutomations", pipelineAutomationsResponse())
+
+	cacheDir := t.TempDir()
+	configDir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cacheDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+	t.Setenv("ZH_API_KEY", "test-key")
+	t.Setenv("ZH_WORKSPACE", "ws-123")
+	t.Setenv("ZH_GITHUB_TOKEN", "")
+
+	origNew := apiNewFunc
+	apiNewFunc = func(apiKey string, opts ...api.Option) *api.Client {
+		return api.New(apiKey, append(opts, api.WithEndpoint(ms.URL()))...)
+	}
+	defer func() { apiNewFunc = origNew }()
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"pipeline", "automations", "In Development"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("pipeline automations returned error: %v", err)
+	}
+
+	out := buf.String()
+
+	if !strings.Contains(out, "AUTOMATIONS: In Development") {
+		t.Error("output should contain automations title")
+	}
+	if !strings.Contains(out, "PIPELINE-TO-PIPELINE AUTOMATIONS") {
+		t.Error("output should contain P2P automations section")
+	}
+	if !strings.Contains(out, "Moves to") {
+		t.Error("output should show 'Moves to' direction")
+	}
+	if !strings.Contains(out, "Done") {
+		t.Error("output should show destination pipeline name")
+	}
+	if !strings.Contains(out, "Moves from") {
+		t.Error("output should show 'Moves from' direction")
+	}
+	if !strings.Contains(out, "New Issues") {
+		t.Error("output should show source pipeline name")
+	}
+}
+
+func TestPipelineAutomationsNoAutomations(t *testing.T) {
+	resetPipelineFlags()
+
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListPipelines", pipelineResolutionResponse())
+	ms.HandleQuery("PipelineAutomations", pipelineAutomationsEmptyResponse())
+
+	cacheDir := t.TempDir()
+	configDir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cacheDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+	t.Setenv("ZH_API_KEY", "test-key")
+	t.Setenv("ZH_WORKSPACE", "ws-123")
+	t.Setenv("ZH_GITHUB_TOKEN", "")
+
+	origNew := apiNewFunc
+	apiNewFunc = func(apiKey string, opts ...api.Option) *api.Client {
+		return api.New(apiKey, append(opts, api.WithEndpoint(ms.URL()))...)
+	}
+	defer func() { apiNewFunc = origNew }()
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"pipeline", "automations", "In Development"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("pipeline automations returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "No automations configured") {
+		t.Errorf("expected no automations message, got: %s", out)
+	}
+}
+
+func TestPipelineAutomationsJSON(t *testing.T) {
+	resetPipelineFlags()
+
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListPipelines", pipelineResolutionResponse())
+	ms.HandleQuery("PipelineAutomations", pipelineAutomationsResponse())
+
+	cacheDir := t.TempDir()
+	configDir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cacheDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+	t.Setenv("ZH_API_KEY", "test-key")
+	t.Setenv("ZH_WORKSPACE", "ws-123")
+	t.Setenv("ZH_GITHUB_TOKEN", "")
+
+	origNew := apiNewFunc
+	apiNewFunc = func(apiKey string, opts ...api.Option) *api.Client {
+		return api.New(apiKey, append(opts, api.WithEndpoint(ms.URL()))...)
+	}
+	defer func() { apiNewFunc = origNew }()
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"pipeline", "automations", "In Development", "--output=json"})
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("pipeline automations --output=json returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nOutput: %s", err, buf.String())
+	}
+
+	if result["pipeline"] != "In Development" {
+		t.Errorf("JSON should contain pipeline name, got: %v", result)
+	}
+	if _, ok := result["eventAutomations"]; !ok {
+		t.Error("JSON output should contain 'eventAutomations' key")
+	}
+	if _, ok := result["p2pSources"]; !ok {
+		t.Error("JSON output should contain 'p2pSources' key")
+	}
+	if _, ok := result["p2pDestinations"]; !ok {
+		t.Error("JSON output should contain 'p2pDestinations' key")
+	}
+}
+
+func TestPipelineAutomationsWithEventAutomations(t *testing.T) {
+	resetPipelineFlags()
+
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListPipelines", pipelineResolutionResponse())
+	ms.HandleQuery("PipelineAutomations", pipelineAutomationsWithEventsResponse())
+
+	cacheDir := t.TempDir()
+	configDir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cacheDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+	t.Setenv("ZH_API_KEY", "test-key")
+	t.Setenv("ZH_WORKSPACE", "ws-123")
+	t.Setenv("ZH_GITHUB_TOKEN", "")
+
+	origNew := apiNewFunc
+	apiNewFunc = func(apiKey string, opts ...api.Option) *api.Client {
+		return api.New(apiKey, append(opts, api.WithEndpoint(ms.URL()))...)
+	}
+	defer func() { apiNewFunc = origNew }()
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"pipeline", "automations", "In Development"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("pipeline automations returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "EVENT AUTOMATIONS") {
+		t.Error("output should contain EVENT AUTOMATIONS section")
+	}
+	if !strings.Contains(out, "auto-close") {
+		t.Error("output should contain automation element details")
+	}
+}
+
 // --- helpers ---
+
+func pipelineAutomationsResponse() map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"workspace": map[string]any{
+				"pipelinesConnection": map[string]any{
+					"nodes": []any{
+						buildAutomationPipelineNode("p1", "New Issues", 0, nil, 0, nil, 0, nil),
+						buildAutomationPipelineNode("p2", "In Development", 0, nil,
+							1, []any{
+								map[string]any{
+									"id":                  "auto-1",
+									"destinationPipeline": map[string]any{"id": "p3", "name": "Done"},
+									"createdAt":           "2026-01-15T10:00:00Z",
+								},
+							},
+							1, []any{
+								map[string]any{
+									"id":             "auto-2",
+									"sourcePipeline": map[string]any{"id": "p1", "name": "New Issues"},
+									"createdAt":      "2026-01-15T10:00:00Z",
+								},
+							},
+						),
+						buildAutomationPipelineNode("p3", "Done", 0, nil, 0, nil, 0, nil),
+					},
+				},
+			},
+		},
+	}
+}
+
+func pipelineAutomationsEmptyResponse() map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"workspace": map[string]any{
+				"pipelinesConnection": map[string]any{
+					"nodes": []any{
+						buildAutomationPipelineNode("p1", "New Issues", 0, nil, 0, nil, 0, nil),
+						buildAutomationPipelineNode("p2", "In Development", 0, nil, 0, nil, 0, nil),
+						buildAutomationPipelineNode("p3", "Done", 0, nil, 0, nil, 0, nil),
+					},
+				},
+			},
+		},
+	}
+}
+
+func pipelineAutomationsWithEventsResponse() map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"workspace": map[string]any{
+				"pipelinesConnection": map[string]any{
+					"nodes": []any{
+						buildAutomationPipelineNode("p1", "New Issues", 0, nil, 0, nil, 0, nil),
+						buildAutomationPipelineNode("p2", "In Development",
+							1, []any{
+								map[string]any{
+									"id":             "event-auto-1",
+									"elementDetails": map[string]any{"type": "auto-close", "trigger": "pr_merged"},
+									"createdAt":      "2026-01-10T08:00:00Z",
+									"updatedAt":      "2026-01-10T08:00:00Z",
+								},
+							},
+							0, nil, 0, nil,
+						),
+						buildAutomationPipelineNode("p3", "Done", 0, nil, 0, nil, 0, nil),
+					},
+				},
+			},
+		},
+	}
+}
+
+// buildAutomationPipelineNode builds a pipeline node for the automations response.
+func buildAutomationPipelineNode(id, name string, eventCount int, eventNodes []any, srcCount int, srcNodes []any, destCount int, destNodes []any) map[string]any {
+	if eventNodes == nil {
+		eventNodes = []any{}
+	}
+	if srcNodes == nil {
+		srcNodes = []any{}
+	}
+	if destNodes == nil {
+		destNodes = []any{}
+	}
+	return map[string]any{
+		"id":   id,
+		"name": name,
+		"pipelineConfiguration": map[string]any{
+			"pipelineAutomations": map[string]any{
+				"totalCount": eventCount,
+				"nodes":      eventNodes,
+			},
+		},
+		"pipelineToPipelineAutomationSources": map[string]any{
+			"totalCount": srcCount,
+			"nodes":      srcNodes,
+		},
+		"pipelineToPipelineAutomationDestinations": map[string]any{
+			"totalCount": destCount,
+			"nodes":      destNodes,
+		},
+	}
+}
 
 func pipelineListResponse() map[string]any {
 	return map[string]any{

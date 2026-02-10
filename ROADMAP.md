@@ -166,17 +166,17 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] Tests: alias creation, alias used in resolution
 
 ### `zh pipeline automations <name>`
-- [ ] Display configured automations for the pipeline
-- [ ] Tests: with and without automations
+- [x] Display configured automations for the pipeline
+- [x] Tests: with and without automations
 
 ## Phase 7: Board
 
 ### `zh board`
-- [ ] Fetch all pipelines with their issues
-- [ ] Render as columnar markdown view (pipeline name as header, issues listed underneath)
-- [ ] `--pipeline=<name>` filter to single pipeline
-- [ ] JSON output: structured pipeline/issue data
-- [ ] Tests: full board, filtered board, empty pipelines
+- [x] Fetch all pipelines with their issues
+- [x] Render as columnar markdown view (pipeline name as header, issues listed underneath)
+- [x] `--pipeline=<name>` filter to single pipeline
+- [x] JSON output: structured pipeline/issue data
+- [x] Tests: full board, filtered board, empty pipelines
 
 ## Phase 8: Issue commands (core)
 

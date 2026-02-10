@@ -81,8 +81,11 @@ type graphQLResponse struct {
 
 // graphQLError represents an error in a GraphQL response.
 type graphQLError struct {
-	Message string `json:"message"`
-	Path    []any  `json:"path"`
+	Message    string `json:"message"`
+	Path       []any  `json:"path"`
+	Extensions struct {
+		Code string `json:"code"`
+	} `json:"extensions"`
 }
 
 // Execute sends a GraphQL query and returns the raw JSON data field.
@@ -179,6 +182,24 @@ func (e *GraphQLError) Error() string {
 		msg += "\n  - " + err.Message
 	}
 	return msg
+}
+
+// IsNotFound returns true if any of the GraphQL errors have a NOT_FOUND extension code.
+func (e *GraphQLError) IsNotFound() bool {
+	for _, err := range e.Errors {
+		if err.Extensions.Code == "NOT_FOUND" {
+			return true
+		}
+	}
+	return false
+}
+
+// IsGraphQLNotFound checks whether an error is a GraphQL NOT_FOUND error.
+func IsGraphQLNotFound(err error) bool {
+	if gqlErr, ok := err.(*GraphQLError); ok {
+		return gqlErr.IsNotFound()
+	}
+	return false
 }
 
 func (c *Client) log(format string, args ...any) {

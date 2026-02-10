@@ -188,6 +188,9 @@ func resolveByRepoAndNumber(client *api.Client, workspaceID string, repo *Cached
 		"issueNumber":    number,
 	})
 	if err != nil {
+		if api.IsGraphQLNotFound(err) {
+			return nil, exitcode.NotFoundError(fmt.Sprintf("issue %s/%s#%d not found", repo.OwnerName, repo.Name, number))
+		}
 		return nil, exitcode.General("fetching issue details", err)
 	}
 

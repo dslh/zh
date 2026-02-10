@@ -1236,6 +1236,9 @@ func runIssueShowByInfo(client *api.Client, ghClient *gh.Client, workspaceID str
 		"workspaceId":    workspaceID,
 	})
 	if err != nil {
+		if api.IsGraphQLNotFound(err) {
+			return exitcode.NotFoundError(fmt.Sprintf("issue #%d not found", issueNumber))
+		}
 		return exitcode.General("fetching issue details", err)
 	}
 
@@ -1261,6 +1264,9 @@ func runIssueShowByNode(client *api.Client, ghClient *gh.Client, workspaceID, no
 		"workspaceId": workspaceID,
 	})
 	if err != nil {
+		if api.IsGraphQLNotFound(err) {
+			return exitcode.NotFoundError(fmt.Sprintf("issue %q not found", nodeID))
+		}
 		return exitcode.General("fetching issue details", err)
 	}
 

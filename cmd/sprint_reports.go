@@ -569,12 +569,13 @@ func runSprintScope(cmd *cobra.Command, args []string) error {
 
 	// Fetch scope changes with pagination
 	limit := output.EffectiveLimit(scopeLimit, scopeAll)
-	events, sprint, totalCount, err := fetchScopeChanges(client, resolved.ID, limit)
-	if err != nil {
-		return err
-	}
 
+	// For JSON output, respect the limit directly
 	if output.IsJSON(outputFormat) {
+		events, sprint, totalCount, err := fetchScopeChanges(client, resolved.ID, limit)
+		if err != nil {
+			return err
+		}
 		return output.JSON(w, map[string]any{
 			"sprint": map[string]any{
 				"id":              sprint.ID,
@@ -590,6 +591,18 @@ func runSprintScope(cmd *cobra.Command, args []string) error {
 		})
 	}
 
+	// For human-readable output, fetch all events so the summary is accurate
+	allEvents, sprint, totalCount, err := fetchScopeChanges(client, resolved.ID, 0)
+	if err != nil {
+		return err
+	}
+
+	// Display events are limited for the event log
+	displayEvents := allEvents
+	if limit > 0 && limit < len(allEvents) {
+		displayEvents = allEvents[:limit]
+	}
+
 	// Header
 	d := output.NewDetailWriter(w, "SCOPE CHANGES", sprint.DisplayName())
 	fields := []output.KeyValue{
@@ -598,7 +611,7 @@ func runSprintScope(cmd *cobra.Command, args []string) error {
 	if sprint.TotalPoints > 0 {
 		fields = append(fields, output.KV("Points", output.FormatProgress(int(sprint.CompletedPoints), int(sprint.TotalPoints))))
 	}
-	fields = append(fields, output.KV("Changes", formatScopeChangeSummaryLine(events, totalCount)))
+	fields = append(fields, output.KV("Changes", formatScopeChangeSummaryLine(allEvents, totalCount)))
 	d.Fields(fields)
 
 	if totalCount == 0 {
@@ -607,14 +620,14 @@ func runSprintScope(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Compute summary
-	summary := computeScopeSummary(events, sprint.StartAt)
+	// Compute summary from all events (not limited)
+	summary := computeScopeSummary(allEvents, sprint.StartAt)
 
 	if !scopeSummary {
-		// Event log table
+		// Event log table (uses limited display events)
 		d.Section("EVENT LOG")
 		lw := output.NewListWriter(w, "DATE", "ACTION", "PTS", "REPO", "#", "TITLE")
-		for _, e := range events {
+		for _, e := range displayEvents {
 			t, _ := time.Parse(time.RFC3339, e.EffectiveAt)
 			date := output.FormatDate(t)
 
@@ -643,8 +656,8 @@ func runSprintScope(cmd *cobra.Command, args []string) error {
 			)
 		}
 
-		footer := fmt.Sprintf("Showing %d", len(events))
-		if totalCount > len(events) {
+		footer := fmt.Sprintf("Showing %d", len(displayEvents))
+		if totalCount > len(displayEvents) {
 			footer += fmt.Sprintf(" of %d", totalCount)
 		}
 		footer += " event(s)"

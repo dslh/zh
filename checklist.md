@@ -62,7 +62,7 @@
 - [x] `zh sprint remove <sprint> <issue>...`
 - [x] `zh sprint review <sprint>`
 - [x] `zh sprint scope <sprint>`
-- [ ] `zh sprint velocity`
+- [x] `zh sprint velocity`
 
 ## workspace
 - [ ] `zh workspace list`

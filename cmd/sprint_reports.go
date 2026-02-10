@@ -441,12 +441,16 @@ func runSprintVelocity(cmd *cobra.Command, args []string) error {
 	ws := resp.Workspace
 
 	if output.IsJSON(outputFormat) {
+		var activeSprint any = ws.ActiveSprint
+		if velocityNoActive {
+			activeSprint = nil
+		}
 		return output.JSON(w, map[string]any{
 			"workspace":        ws.DisplayName,
 			"averageVelocity":  ws.AverageSprintVelocity,
 			"velocityWithDiff": ws.AverageSprintVelocityDiff,
 			"sprintConfig":     ws.SprintConfig,
-			"activeSprint":     ws.ActiveSprint,
+			"activeSprint":     activeSprint,
 			"closedSprints":    ws.Sprints.Nodes,
 		})
 	}

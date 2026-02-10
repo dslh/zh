@@ -161,6 +161,50 @@ func TestSprintVelocityNoSprints(t *testing.T) {
 	}
 }
 
+func TestSprintVelocityNoActiveJSON(t *testing.T) {
+	resetSprintFlags()
+	resetSprintReportFlags()
+
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("SprintVelocity", sprintVelocityResponse())
+
+	cacheDir := t.TempDir()
+	configDir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cacheDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+	t.Setenv("ZH_API_KEY", "test-key")
+	t.Setenv("ZH_WORKSPACE", "ws-123")
+	t.Setenv("ZH_GITHUB_TOKEN", "")
+
+	origNew := apiNewFunc
+	apiNewFunc = func(apiKey string, opts ...api.Option) *api.Client {
+		return api.New(apiKey, append(opts, api.WithEndpoint(ms.URL()))...)
+	}
+	defer func() { apiNewFunc = origNew }()
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"sprint", "velocity", "--no-active", "--output=json"})
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("sprint velocity --no-active --output=json returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nOutput: %s", err, buf.String())
+	}
+
+	if result["activeSprint"] != nil {
+		t.Error("JSON should have null activeSprint when --no-active is set")
+	}
+	if result["closedSprints"] == nil {
+		t.Error("JSON should still contain closedSprints field")
+	}
+}
+
 func TestSprintVelocityNoActive(t *testing.T) {
 	resetSprintFlags()
 	resetSprintReportFlags()

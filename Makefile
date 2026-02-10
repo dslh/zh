@@ -20,7 +20,7 @@ lint:
 	golangci-lint run ./...
 
 run: build
-	XDG_CONFIG_HOME=$(XDG_CONFIG_HOME) XDG_CACHE_HOME=$(XDG_CACHE_HOME) ./$(BINARY) $(ARGS)
+	XDG_CONFIG_HOME=$(XDG_CONFIG_HOME) XDG_CACHE_HOME=$(XDG_CACHE_HOME) GH_CONFIG_DIR=$(HOME)/.config/gh ./$(BINARY) $(ARGS)
 
 clean:
 	rm -f $(BINARY)

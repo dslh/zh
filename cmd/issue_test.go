@@ -8,6 +8,7 @@ import (
 
 	"github.com/dslh/zh/internal/api"
 	"github.com/dslh/zh/internal/cache"
+	"github.com/dslh/zh/internal/gh"
 	"github.com/dslh/zh/internal/resolve"
 	"github.com/dslh/zh/internal/testutil"
 )
@@ -357,6 +358,124 @@ func TestIssueShowNotFound(t *testing.T) {
 	}
 }
 
+func TestIssueShowWithGitHub(t *testing.T) {
+	resetIssueFlags()
+
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListRepos", repoResolutionResponse())
+	ms.HandleQuery("IssueByInfo", issueByInfoResolutionResponse())
+	ms.HandleQuery("GetIssueDetails", issueShowResponse())
+
+	ghMs := testutil.NewMockServer(t)
+	ghMs.HandleQuery("GetIssueGitHub", issueShowGitHubResponse())
+
+	setupIssueTestEnvWithGitHub(t, ms, ghMs)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"issue", "show", "task-tracker#1"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("issue show with GitHub returned error: %v", err)
+	}
+
+	out := buf.String()
+
+	// Check GitHub-enriched fields
+	if !strings.Contains(out, "Author") {
+		t.Error("output should contain Author field")
+	}
+	if !strings.Contains(out, "@testuser") {
+		t.Error("output should contain author login")
+	}
+	if !strings.Contains(out, "REACTIONS") {
+		t.Error("output should contain REACTIONS section")
+	}
+	if !strings.Contains(out, "+1") {
+		t.Error("output should contain thumbs up reaction")
+	}
+}
+
+func TestIssueShowPRWithGitHub(t *testing.T) {
+	resetIssueFlags()
+
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListRepos", repoResolutionResponse())
+	ms.HandleQuery("IssueByInfo", issueByInfoResolutionResponse())
+	ms.HandleQuery("GetIssueDetails", issueShowPRResponse())
+
+	ghMs := testutil.NewMockServer(t)
+	ghMs.HandleQuery("GetIssueGitHub", issueShowGitHubPRResponse())
+
+	setupIssueTestEnvWithGitHub(t, ms, ghMs)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"issue", "show", "task-tracker#1"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("issue show PR with GitHub returned error: %v", err)
+	}
+
+	out := buf.String()
+
+	// Check PR-specific fields
+	if !strings.Contains(out, "PR:") {
+		t.Errorf("output should show PR type, got: %s", out)
+	}
+	if !strings.Contains(out, "REVIEWS") {
+		t.Error("output should contain REVIEWS section")
+	}
+	if !strings.Contains(out, "@reviewer1") {
+		t.Error("output should contain reviewer login")
+	}
+	if !strings.Contains(out, "Approved") {
+		t.Error("output should contain review state")
+	}
+	if !strings.Contains(out, "CI") {
+		t.Error("output should contain CI field")
+	}
+	if !strings.Contains(out, "Passing") {
+		t.Error("output should show CI status as Passing")
+	}
+}
+
+func TestIssueShowJSONWithGitHub(t *testing.T) {
+	resetIssueFlags()
+
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListRepos", repoResolutionResponse())
+	ms.HandleQuery("IssueByInfo", issueByInfoResolutionResponse())
+	ms.HandleQuery("GetIssueDetails", issueShowResponse())
+
+	ghMs := testutil.NewMockServer(t)
+	ghMs.HandleQuery("GetIssueGitHub", issueShowGitHubResponse())
+
+	setupIssueTestEnvWithGitHub(t, ms, ghMs)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"issue", "show", "task-tracker#1", "--output=json"})
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("issue show JSON with GitHub returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nOutput: %s", err, buf.String())
+	}
+
+	if result["author"] != "testuser" {
+		t.Errorf("JSON should contain author, got: %v", result["author"])
+	}
+	if result["reactions"] == nil {
+		t.Error("JSON should contain reactions")
+	}
+}
+
 func TestIssueHelpText(t *testing.T) {
 	resetIssueFlags()
 
@@ -652,4 +771,109 @@ func issueShowWithPRsResponse() map[string]any {
 		},
 	}
 	return resp
+}
+
+func issueShowPRResponse() map[string]any {
+	resp := issueShowResponse()
+	data := resp["data"].(map[string]any)
+	issue := data["issueByInfo"].(map[string]any)
+	issue["pullRequest"] = true
+	issue["title"] = "Fix button alignment CSS"
+	return resp
+}
+
+func issueShowGitHubResponse() map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"repository": map[string]any{
+				"issueOrPullRequest": map[string]any{
+					"author": map[string]any{"login": "testuser"},
+					"reactionGroups": []any{
+						map[string]any{
+							"content":  "THUMBS_UP",
+							"reactors": map[string]any{"totalCount": 5},
+						},
+						map[string]any{
+							"content":  "HEART",
+							"reactors": map[string]any{"totalCount": 2},
+						},
+						map[string]any{
+							"content":  "CONFUSED",
+							"reactors": map[string]any{"totalCount": 0},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func issueShowGitHubPRResponse() map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"repository": map[string]any{
+				"issueOrPullRequest": map[string]any{
+					"author":  map[string]any{"login": "testuser"},
+					"isDraft": false,
+					"merged":  false,
+					"reactionGroups": []any{
+						map[string]any{
+							"content":  "THUMBS_UP",
+							"reactors": map[string]any{"totalCount": 3},
+						},
+					},
+					"reviews": map[string]any{
+						"nodes": []any{
+							map[string]any{
+								"author": map[string]any{"login": "reviewer1"},
+								"state":  "APPROVED",
+							},
+						},
+					},
+					"commits": map[string]any{
+						"nodes": []any{
+							map[string]any{
+								"commit": map[string]any{
+									"statusCheckRollup": map[string]any{
+										"state": "SUCCESS",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func setupIssueTestEnvWithGitHub(t *testing.T, ms *testutil.MockServer, ghMs *testutil.MockServer) {
+	t.Helper()
+
+	cacheDir := t.TempDir()
+	configDir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cacheDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+	t.Setenv("ZH_API_KEY", "test-key")
+	t.Setenv("ZH_WORKSPACE", "ws-123")
+	t.Setenv("ZH_GITHUB_TOKEN", "")
+
+	origNew := apiNewFunc
+	apiNewFunc = func(apiKey string, opts ...api.Option) *api.Client {
+		return api.New(apiKey, append(opts, api.WithEndpoint(ms.URL()))...)
+	}
+	t.Cleanup(func() { apiNewFunc = origNew })
+
+	origGh := ghNewFunc
+	ghNewFunc = func(method, token string, opts ...gh.Option) *gh.Client {
+		return gh.New("pat", "test-token", append(opts, gh.WithEndpoint(ghMs.URL()))...)
+	}
+	t.Cleanup(func() { ghNewFunc = origGh })
+
+	// Pre-populate pipeline cache for list tests
+	_ = cache.Set(resolve.PipelineCacheKey("ws-123"), []resolve.CachedPipeline{
+		{ID: "p1", Name: "New Issues"},
+		{ID: "p2", Name: "In Development"},
+		{ID: "p3", Name: "Done"},
+	})
 }

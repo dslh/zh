@@ -191,7 +191,7 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] Resolve issue identifier
 - [x] Display: title, state, body, estimate, pipeline, assignees, labels, connected PRs, blockers, priority
 - [ ] `--interactive` mode: list issues, select one
-- [ ] With GitHub access: include author, reactions, PR review/merge/CI status
+- [x] With GitHub access: include author, reactions, PR review/merge/CI status
 - [x] Tests: full detail output, without GitHub access, interactive mode
 
 ### `zh issue move <issue>... <pipeline>`
@@ -208,17 +208,17 @@ Build the resolution layer now — almost every subsequent command depends on it
 - [x] Tests: set, clear, invalid estimate
 
 ### `zh issue close <issue>...`
-- [ ] Resolve issue(s), close via API
-- [ ] `--dry-run` support
-- [ ] Stop-on-first-error by default, `--continue-on-error` to process all items
-- [ ] Tests: single close, batch close, already closed, continue-on-error with partial failure
+- [x] Resolve issue(s), close via API
+- [x] `--dry-run` support
+- [x] Stop-on-first-error by default, `--continue-on-error` to process all items
+- [x] Tests: single close, batch close, already closed, continue-on-error with partial failure
 
 ### `zh issue reopen <issue>... --pipeline=<name>`
-- [ ] Resolve issue(s) and target pipeline
-- [ ] `--position=<top|bottom>`
-- [ ] `--dry-run` support
-- [ ] `--continue-on-error` for batch operations
-- [ ] Tests: reopen into pipeline, missing pipeline error, continue-on-error with partial failure
+- [x] Resolve issue(s) and target pipeline
+- [x] `--position=<top|bottom>`
+- [x] `--dry-run` support
+- [x] `--continue-on-error` for batch operations
+- [x] Tests: reopen into pipeline, missing pipeline error, continue-on-error with partial failure
 
 ## Phase 9: Issue commands (connections & dependencies)
 

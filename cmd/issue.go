@@ -10,6 +10,7 @@ import (
 	"github.com/dslh/zh/internal/api"
 	"github.com/dslh/zh/internal/config"
 	"github.com/dslh/zh/internal/exitcode"
+	"github.com/dslh/zh/internal/gh"
 	"github.com/dslh/zh/internal/output"
 	"github.com/dslh/zh/internal/resolve"
 	"github.com/spf13/cobra"
@@ -178,6 +179,26 @@ type issueRefNode struct {
 			Login string `json:"login"`
 		} `json:"owner"`
 	} `json:"repository"`
+}
+
+// issueGitHubData holds supplementary data from the GitHub API.
+type issueGitHubData struct {
+	Author    string
+	Reactions []issueReaction
+	Reviews   []issueReview
+	CIStatus  string // "success", "failure", "pending", ""
+	IsMerged  bool
+	IsDraft   bool
+}
+
+type issueReaction struct {
+	Content string
+	Count   int
+}
+
+type issueReview struct {
+	Author string
+	State  string // "APPROVED", "CHANGES_REQUESTED", "COMMENTED"
 }
 
 // GraphQL queries
@@ -425,6 +446,45 @@ const issueShowByNodeQuery = `query GetIssueByNode($id: ID!, $workspaceId: ID!) 
       }
 
       milestone { title state dueOn }
+    }
+  }
+}`
+
+// GitHub GraphQL query for supplementary issue data
+const issueShowGitHubQuery = `query GetIssueGitHub($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    issueOrPullRequest(number: $number) {
+      ... on Issue {
+        author { login }
+        reactionGroups {
+          content
+          reactors { totalCount }
+        }
+      }
+      ... on PullRequest {
+        author { login }
+        isDraft
+        merged
+        reactionGroups {
+          content
+          reactors { totalCount }
+        }
+        reviews(last: 20) {
+          nodes {
+            author { login }
+            state
+          }
+        }
+        commits(last: 1) {
+          nodes {
+            commit {
+              statusCheckRollup {
+                state
+              }
+            }
+          }
+        }
+      }
     }
   }
 }`
@@ -1058,6 +1118,7 @@ func runIssueShow(cmd *cobra.Command, args []string) error {
 	}
 
 	client := newClient(cfg, cmd)
+	ghClient := newGitHubClient(cfg, cmd)
 	w := cmd.OutOrStdout()
 
 	// Parse the identifier to determine query strategy
@@ -1065,11 +1126,10 @@ func runIssueShow(cmd *cobra.Command, args []string) error {
 
 	// If it's a ZenHub ID, use the node query directly
 	if parseErr == nil && parsed.ZenHubID != "" {
-		return runIssueShowByNode(client, cfg.Workspace, parsed.ZenHubID, w)
+		return runIssueShowByNode(client, ghClient, cfg.Workspace, parsed.ZenHubID, w)
 	}
 
 	// Resolve to get repo GH ID and issue number
-	ghClient := newGitHubClient(cfg, cmd)
 	resolved, err := resolve.Issue(client, cfg.Workspace, args[0], &resolve.IssueOptions{
 		RepoFlag:     issueShowRepo,
 		GitHubClient: ghClient,
@@ -1078,11 +1138,11 @@ func runIssueShow(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	return runIssueShowByInfo(client, cfg.Workspace, resolved.RepoGhID, resolved.Number, w)
+	return runIssueShowByInfo(client, ghClient, cfg.Workspace, resolved.RepoGhID, resolved.Number, w)
 }
 
 // runIssueShowByInfo fetches issue details using repo GH ID and issue number.
-func runIssueShowByInfo(client *api.Client, workspaceID string, repoGhID, issueNumber int, w writerFlusher) error {
+func runIssueShowByInfo(client *api.Client, ghClient *gh.Client, workspaceID string, repoGhID, issueNumber int, w writerFlusher) error {
 	data, err := client.Execute(issueShowQuery, map[string]any{
 		"repositoryGhId": repoGhID,
 		"issueNumber":    issueNumber,
@@ -1103,11 +1163,12 @@ func runIssueShowByInfo(client *api.Client, workspaceID string, repoGhID, issueN
 		return exitcode.NotFoundError(fmt.Sprintf("issue #%d not found", issueNumber))
 	}
 
-	return renderIssueDetail(w, resp.IssueByInfo)
+	ghData := fetchGitHubIssueData(ghClient, resp.IssueByInfo)
+	return renderIssueDetail(w, resp.IssueByInfo, ghData)
 }
 
 // runIssueShowByNode fetches issue details using ZenHub node ID.
-func runIssueShowByNode(client *api.Client, workspaceID, nodeID string, w writerFlusher) error {
+func runIssueShowByNode(client *api.Client, ghClient *gh.Client, workspaceID, nodeID string, w writerFlusher) error {
 	data, err := client.Execute(issueShowByNodeQuery, map[string]any{
 		"id":          nodeID,
 		"workspaceId": workspaceID,
@@ -1127,13 +1188,31 @@ func runIssueShowByNode(client *api.Client, workspaceID, nodeID string, w writer
 		return exitcode.NotFoundError(fmt.Sprintf("issue %q not found", nodeID))
 	}
 
-	return renderIssueDetail(w, resp.Node)
+	ghData := fetchGitHubIssueData(ghClient, resp.Node)
+	return renderIssueDetail(w, resp.Node, ghData)
 }
 
 // renderIssueDetail renders the full issue detail view.
-func renderIssueDetail(w writerFlusher, issue *issueDetailNode) error {
+func renderIssueDetail(w writerFlusher, issue *issueDetailNode, ghData *issueGitHubData) error {
 	if output.IsJSON(outputFormat) {
-		return output.JSON(w, issue)
+		jsonData := map[string]any{}
+		raw, _ := json.Marshal(issue)
+		_ = json.Unmarshal(raw, &jsonData)
+		if ghData != nil {
+			if ghData.Author != "" {
+				jsonData["author"] = ghData.Author
+			}
+			if len(ghData.Reactions) > 0 {
+				jsonData["reactions"] = ghData.Reactions
+			}
+			if len(ghData.Reviews) > 0 {
+				jsonData["reviews"] = ghData.Reviews
+			}
+			if ghData.CIStatus != "" {
+				jsonData["ciStatus"] = ghData.CIStatus
+			}
+		}
+		return output.JSON(w, jsonData)
 	}
 
 	// Build the title: "ISSUE: repo#number: Title" or "PR: repo#number: Title"
@@ -1146,8 +1225,8 @@ func renderIssueDetail(w writerFlusher, issue *issueDetailNode) error {
 
 	d := output.NewDetailWriter(w, entityType, title)
 
-	// State
-	state := formatIssueState(issue.State, issue.PullRequest)
+	// State (enhanced with PR merge/draft status from GitHub)
+	state := formatIssueShowState(issue.State, issue.PullRequest, ghData)
 
 	// Pipeline
 	pipeline := output.DetailMissing
@@ -1165,6 +1244,12 @@ func renderIssueDetail(w writerFlusher, issue *issueDetailNode) error {
 	priority := output.DetailMissing
 	if issue.PipelineIssue != nil && issue.PipelineIssue.Priority != nil {
 		priority = issue.PipelineIssue.Priority.Name
+	}
+
+	// Author (from GitHub)
+	author := output.DetailMissing
+	if ghData != nil && ghData.Author != "" {
+		author = "@" + ghData.Author
 	}
 
 	// Assignees
@@ -1214,14 +1299,27 @@ func renderIssueDetail(w writerFlusher, issue *issueDetailNode) error {
 		output.KV("Pipeline", pipeline),
 		output.KV("Estimate", estimate),
 		output.KV("Priority", priority),
+	}
+
+	if ghData != nil && ghData.Author != "" {
+		fields = append(fields, output.KV("Author", author))
+	}
+
+	fields = append(fields,
 		output.KV("Assignees", assignees),
 		output.KV("Labels", labels),
 		output.KV("Sprint", sprint),
 		output.KV("Epic", epic),
-	}
+	)
 
 	if issue.Milestone != nil {
 		fields = append(fields, output.KV("Milestone", milestone))
+	}
+
+	// CI status for PRs (from GitHub)
+	if ghData != nil && ghData.CIStatus != "" {
+		ciStr := formatCIStatus(ghData.CIStatus)
+		fields = append(fields, output.KV("CI", ciStr))
 	}
 
 	d.Fields(fields)
@@ -1246,6 +1344,28 @@ func renderIssueDetail(w writerFlusher, issue *issueDetailNode) error {
 			lw.Row(output.Cyan(prRef), prState, prTitle)
 		}
 		lw.Flush()
+	}
+
+	// Reviews section (PRs with GitHub access)
+	if ghData != nil && len(ghData.Reviews) > 0 {
+		d.Section("REVIEWS")
+		lw := output.NewListWriter(w, "REVIEWER", "STATUS")
+		for _, r := range ghData.Reviews {
+			status := formatReviewState(r.State)
+			lw.Row("@"+r.Author, status)
+		}
+		lw.Flush()
+	}
+
+	// Reactions (from GitHub)
+	if ghData != nil && len(ghData.Reactions) > 0 {
+		d.Section("REACTIONS")
+		var parts []string
+		for _, r := range ghData.Reactions {
+			emoji := reactionEmoji(r.Content)
+			parts = append(parts, fmt.Sprintf("%s %d", emoji, r.Count))
+		}
+		fmt.Fprintf(w, "  %s\n", strings.Join(parts, "  "))
 	}
 
 	// Blocking section
@@ -1300,7 +1420,7 @@ func renderIssueDetail(w writerFlusher, issue *issueDetailNode) error {
 	return nil
 }
 
-// formatIssueState formats the issue state for display.
+// formatIssueState formats the issue state for display (used by list view).
 func formatIssueState(state string, isPR bool) string {
 	lower := strings.ToLower(state)
 	switch lower {
@@ -1315,5 +1435,190 @@ func formatIssueState(state string, isPR bool) string {
 		return output.Green("Merged")
 	default:
 		return lower
+	}
+}
+
+// formatIssueShowState formats state for the detail view, enhanced with GitHub data.
+func formatIssueShowState(state string, isPR bool, ghData *issueGitHubData) string {
+	if ghData != nil && isPR {
+		if ghData.IsMerged {
+			return output.Green("Merged")
+		}
+		if ghData.IsDraft {
+			base := formatIssueState(state, isPR)
+			return base + " " + output.Dim("(draft)")
+		}
+	}
+	return formatIssueState(state, isPR)
+}
+
+// fetchGitHubIssueData fetches supplementary data from GitHub.
+// Returns nil if GitHub client is not configured.
+func fetchGitHubIssueData(ghClient *gh.Client, issue *issueDetailNode) *issueGitHubData {
+	if ghClient == nil {
+		return nil
+	}
+
+	owner := issue.Repository.Owner.Login
+	repo := issue.Repository.Name
+
+	data, err := ghClient.Execute(issueShowGitHubQuery, map[string]any{
+		"owner":  owner,
+		"repo":   repo,
+		"number": issue.Number,
+	})
+	if err != nil {
+		// GitHub data is optional — don't fail the command
+		return nil
+	}
+
+	var resp struct {
+		Repository *struct {
+			IssueOrPullRequest json.RawMessage `json:"issueOrPullRequest"`
+		} `json:"repository"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil || resp.Repository == nil {
+		return nil
+	}
+
+	// Parse into a generic structure that works for both issues and PRs
+	var node struct {
+		Author *struct {
+			Login string `json:"login"`
+		} `json:"author"`
+		ReactionGroups []struct {
+			Content  string `json:"content"`
+			Reactors struct {
+				TotalCount int `json:"totalCount"`
+			} `json:"reactors"`
+		} `json:"reactionGroups"`
+		IsDraft bool `json:"isDraft"`
+		Merged  bool `json:"merged"`
+		Reviews *struct {
+			Nodes []struct {
+				Author *struct {
+					Login string `json:"login"`
+				} `json:"author"`
+				State string `json:"state"`
+			} `json:"nodes"`
+		} `json:"reviews"`
+		Commits *struct {
+			Nodes []struct {
+				Commit struct {
+					StatusCheckRollup *struct {
+						State string `json:"state"`
+					} `json:"statusCheckRollup"`
+				} `json:"commit"`
+			} `json:"nodes"`
+		} `json:"commits"`
+	}
+	if err := json.Unmarshal(resp.Repository.IssueOrPullRequest, &node); err != nil {
+		return nil
+	}
+
+	result := &issueGitHubData{
+		IsMerged: node.Merged,
+		IsDraft:  node.IsDraft,
+	}
+
+	if node.Author != nil {
+		result.Author = node.Author.Login
+	}
+
+	// Reactions (only include those with count > 0)
+	for _, rg := range node.ReactionGroups {
+		if rg.Reactors.TotalCount > 0 {
+			result.Reactions = append(result.Reactions, issueReaction{
+				Content: rg.Content,
+				Count:   rg.Reactors.TotalCount,
+			})
+		}
+	}
+
+	// Reviews (deduplicate per author, keep latest state)
+	if node.Reviews != nil {
+		seen := make(map[string]string) // author -> latest state
+		var order []string
+		for _, r := range node.Reviews.Nodes {
+			if r.Author == nil {
+				continue
+			}
+			if _, ok := seen[r.Author.Login]; !ok {
+				order = append(order, r.Author.Login)
+			}
+			seen[r.Author.Login] = r.State
+		}
+		for _, login := range order {
+			result.Reviews = append(result.Reviews, issueReview{
+				Author: login,
+				State:  seen[login],
+			})
+		}
+	}
+
+	// CI status
+	if node.Commits != nil && len(node.Commits.Nodes) > 0 {
+		commit := node.Commits.Nodes[0]
+		if commit.Commit.StatusCheckRollup != nil {
+			result.CIStatus = strings.ToLower(commit.Commit.StatusCheckRollup.State)
+		}
+	}
+
+	return result
+}
+
+// formatCIStatus formats the CI status for display.
+func formatCIStatus(status string) string {
+	switch status {
+	case "success":
+		return output.Green("Passing")
+	case "failure", "error":
+		return output.Red("Failing")
+	case "pending", "expected":
+		return output.Yellow("Pending")
+	default:
+		return status
+	}
+}
+
+// formatReviewState formats a PR review state for display.
+func formatReviewState(state string) string {
+	switch state {
+	case "APPROVED":
+		return output.Green("Approved")
+	case "CHANGES_REQUESTED":
+		return output.Red("Changes requested")
+	case "COMMENTED":
+		return "Commented"
+	case "DISMISSED":
+		return output.Dim("Dismissed")
+	case "PENDING":
+		return output.Yellow("Pending")
+	default:
+		return state
+	}
+}
+
+// reactionEmoji converts a GitHub reaction content to an emoji.
+func reactionEmoji(content string) string {
+	switch content {
+	case "THUMBS_UP":
+		return "+1"
+	case "THUMBS_DOWN":
+		return "-1"
+	case "LAUGH":
+		return "laugh"
+	case "HOORAY":
+		return "hooray"
+	case "CONFUSED":
+		return "confused"
+	case "HEART":
+		return "heart"
+	case "ROCKET":
+		return "rocket"
+	case "EYES":
+		return "eyes"
+	default:
+		return strings.ToLower(content)
 	}
 }

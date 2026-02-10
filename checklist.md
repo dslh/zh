@@ -25,7 +25,7 @@
 - [x] `zh epic alias <name> <epic>`
 
 ## issue
-- [ ] `zh issue list`
+- [x] `zh issue list`
 - [ ] `zh issue show <issue>`
 - [ ] `zh issue move <issue>... <pipeline>`
 - [ ] `zh issue estimate <issue>`

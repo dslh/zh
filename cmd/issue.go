@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -629,7 +630,11 @@ func buildIssueListFilters(client *api.Client, workspaceID string) map[string]an
 		filters["labels"] = map[string]any{"in": []string{issueListLabel}}
 	}
 	if issueListEstimate != "" {
-		filters["estimates"] = map[string]any{"values": map[string]any{"in": []string{issueListEstimate}}}
+		val, parseErr := strconv.ParseFloat(issueListEstimate, 64)
+		if parseErr != nil {
+			return filters // invalid estimate value, skip filter
+		}
+		filters["estimates"] = map[string]any{"values": map[string]any{"in": []float64{val}}}
 	}
 	if issueListNoEstimate {
 		filters["estimates"] = map[string]any{"specialFilters": "not_estimated"}
@@ -643,7 +648,7 @@ func buildIssueListFilters(client *api.Client, workspaceID string) map[string]an
 		// Resolve sprint identifier
 		resolved, err := resolve.Sprint(client, workspaceID, issueListSprint)
 		if err == nil {
-			filters["sprints"] = map[string]any{"ids": []string{resolved.ID}}
+			filters["sprints"] = map[string]any{"in": []string{resolved.ID}}
 		}
 	}
 	if issueListRepo != "" {
@@ -936,11 +941,13 @@ func fetchClosedIssues(client *api.Client, workspaceID string, filters map[strin
 const issueListByEpicQuery = `query ListIssuesByEpic(
   $zenhubEpicIds: [ID!]!
   $workspaceId: ID!
+  $filters: ZenhubEpicIssueSearchFiltersInput!
   $first: Int!
   $after: String
 ) {
   searchIssuesByZenhubEpics(
     zenhubEpicIds: $zenhubEpicIds
+    filters: $filters
     first: $first
     after: $after
   ) {
@@ -987,6 +994,9 @@ func fetchIssuesByEpic(client *api.Client, workspaceID, epicID string, filters m
 	totalCount := 0
 	pageSize := 50
 
+	// Build epic-specific filters (ZenhubEpicIssueSearchFiltersInput only supports workspaces)
+	epicFilters := map[string]any{}
+
 	for {
 		if limit > 0 {
 			remaining := limit - len(allIssues)
@@ -1001,6 +1011,7 @@ func fetchIssuesByEpic(client *api.Client, workspaceID, epicID string, filters m
 		vars := map[string]any{
 			"zenhubEpicIds": []string{epicID},
 			"workspaceId":   workspaceID,
+			"filters":       epicFilters,
 			"first":         pageSize,
 		}
 		if cursor != nil {

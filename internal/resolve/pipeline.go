@@ -76,6 +76,11 @@ func PipelineCacheKey(workspaceID string) cache.Key {
 	return cache.NewScopedKey("pipelines", workspaceID)
 }
 
+// GetCachedPipelines returns cached pipelines if present.
+func GetCachedPipelines(key cache.Key) ([]CachedPipeline, bool) {
+	return cache.Get[[]CachedPipeline](key)
+}
+
 // Pipeline resolves a pipeline identifier to a PipelineResult. It checks
 // aliases first, then attempts resolution by exact ID, exact name
 // (case-insensitive), and unique substring match, using the cache with

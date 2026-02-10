@@ -123,7 +123,7 @@ func Issue(client *api.Client, workspaceID string, identifier string, opts *Issu
 			return nil, exitcode.Usage(fmt.Sprintf("bare issue number %d requires --repo flag", parsed.Number))
 		}
 		// Resolve the repo flag to get owner/name
-		repo, err := lookupRepoWithRefresh(client, workspaceID, opts.RepoFlag)
+		repo, err := LookupRepoWithRefresh(client, workspaceID, opts.RepoFlag)
 		if err != nil {
 			return nil, err
 		}
@@ -135,16 +135,16 @@ func Issue(client *api.Client, workspaceID string, identifier string, opts *Issu
 	if parsed.Owner != "" {
 		repoID = parsed.Owner + "/" + parsed.Repo
 	}
-	repo, err := lookupRepoWithRefresh(client, workspaceID, repoID)
+	repo, err := LookupRepoWithRefresh(client, workspaceID, repoID)
 	if err != nil {
 		return nil, err
 	}
 	return resolveByRepoAndNumber(client, workspaceID, repo, parsed.Number)
 }
 
-// lookupRepoWithRefresh resolves a repo identifier using cache with
+// LookupRepoWithRefresh resolves a repo identifier using cache with
 // invalidate-on-miss. The identifier can be "repo" or "owner/repo".
-func lookupRepoWithRefresh(client *api.Client, workspaceID string, identifier string) (*CachedRepo, error) {
+func LookupRepoWithRefresh(client *api.Client, workspaceID string, identifier string) (*CachedRepo, error) {
 	key := RepoCacheKey(workspaceID)
 
 	// Try cache first
@@ -286,7 +286,7 @@ const githubPRByBranchQuery = `query PRByBranch($owner: String!, $repo: String!,
 // resolveByBranch resolves an issue by branch name using GitHub API.
 // The branch name is looked up as a PR head ref in the given repo.
 func resolveByBranch(client *api.Client, workspaceID string, branchName string, opts *IssueOptions) (*IssueResult, error) {
-	repo, err := lookupRepoWithRefresh(client, workspaceID, opts.RepoFlag)
+	repo, err := LookupRepoWithRefresh(client, workspaceID, opts.RepoFlag)
 	if err != nil {
 		return nil, err
 	}

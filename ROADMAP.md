@@ -181,18 +181,18 @@ Build the resolution layer now — almost every subsequent command depends on it
 ## Phase 8: Issue commands (core)
 
 ### `zh issue list`
-- [ ] Query issues across all pipelines (parallel API calls)
-- [ ] Filters: `--pipeline`, `--sprint`, `--epic`, `--assignee`, `--label`, `--estimate`, `--no-estimate`
-- [ ] `--limit` and `--all` flags (default 100 results)
-- [ ] Client-side filtering where API doesn't support it
-- [ ] Tests: no filters, each filter individually, combined filters, limit and all behavior
+- [x] Query issues across all pipelines (parallel API calls)
+- [x] Filters: `--pipeline`, `--sprint`, `--epic`, `--assignee`, `--label`, `--estimate`, `--no-estimate`
+- [x] `--limit` and `--all` flags (default 100 results)
+- [x] Client-side filtering where API doesn't support it
+- [x] Tests: no filters, each filter individually, combined filters, limit and all behavior
 
 ### `zh issue show <issue>`
-- [ ] Resolve issue identifier
-- [ ] Display: title, state, body, estimate, pipeline, assignees, labels, connected PRs, blockers, priority
+- [x] Resolve issue identifier
+- [x] Display: title, state, body, estimate, pipeline, assignees, labels, connected PRs, blockers, priority
 - [ ] `--interactive` mode: list issues, select one
 - [ ] With GitHub access: include author, reactions, PR review/merge/CI status
-- [ ] Tests: full detail output, without GitHub access, interactive mode
+- [x] Tests: full detail output, without GitHub access, interactive mode
 
 ### `zh issue move <issue>... <pipeline>`
 - [ ] Resolve issue(s) and target pipeline

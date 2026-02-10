@@ -169,9 +169,13 @@ func runIssuePriority(cmd *cobra.Command, args []string) error {
 			if len(issueArgs) == 0 {
 				return exitcode.Usage("at least one issue identifier is required")
 			}
-		} else {
-			// Last arg is not a priority — treat all args as issues (clear mode)
+		} else if len(args) == 1 {
+			// Single arg that's not a priority — treat as issue to clear
 			issueArgs = args
+		} else {
+			// Multiple args and last doesn't resolve as priority — report
+			// the priority error so the user knows what went wrong
+			return err
 		}
 	}
 

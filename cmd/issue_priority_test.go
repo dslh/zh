@@ -173,8 +173,8 @@ func TestIssuePriorityInvalid(t *testing.T) {
 	rootCmd.SetOut(buf)
 	rootCmd.SetArgs([]string{"issue", "priority", "task-tracker#1", "nonexistent"})
 
-	// When the last arg doesn't match a priority AND doesn't match an issue,
-	// the command tries to resolve it as an issue and should fail
+	// When there are 2+ args and the last arg doesn't match a priority,
+	// the command returns the priority resolution error
 	err := rootCmd.Execute()
 	if err == nil {
 		t.Fatal("issue priority should error for nonexistent priority used as issue identifier")

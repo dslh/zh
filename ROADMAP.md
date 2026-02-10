@@ -249,23 +249,23 @@ Build the resolution layer now — almost every subsequent command depends on it
 ## Phase 10: Issue commands (metadata)
 
 ### `zh issue priority <issue>... <priority>`
-- [ ] Resolve issue(s) and priority name
-- [ ] Omit priority to clear
-- [ ] `--dry-run` support
-- [ ] `--continue-on-error` for batch operations
-- [ ] Tests: set, clear, invalid priority, continue-on-error with partial failure
+- [x] Resolve issue(s) and priority name
+- [x] Omit priority to clear
+- [x] `--dry-run` support
+- [x] `--continue-on-error` for batch operations
+- [x] Tests: set, clear, invalid priority, continue-on-error with partial failure
 
-### `zh issue label add <issue>... <label>...`
-- [ ] Resolve issue(s) and label(s)
-- [ ] `--dry-run` support
-- [ ] `--continue-on-error` for batch operations
-- [ ] Tests: add single label, multiple labels, label not found, continue-on-error with partial failure
+### `zh issue label add <issue>... -- <label>...`
+- [x] Resolve issue(s) and label(s) (uses `--` separator, resolves labels to IDs)
+- [x] `--dry-run` support
+- [x] `--continue-on-error` for batch operations
+- [x] Tests: add single label, multiple labels, label not found, continue-on-error with partial failure
 
-### `zh issue label remove <issue>... <label>...`
-- [ ] Resolve issue(s) and label(s)
-- [ ] `--dry-run` support
-- [ ] `--continue-on-error` for batch operations
-- [ ] Tests: remove, label not on issue, continue-on-error with partial failure
+### `zh issue label remove <issue>... -- <label>...`
+- [x] Resolve issue(s) and label(s) (uses `--` separator, resolves labels to IDs)
+- [x] `--dry-run` support
+- [x] `--continue-on-error` for batch operations
+- [x] Tests: remove, label not on issue, continue-on-error with partial failure
 
 ### `zh issue activity <issue>`
 - [ ] Fetch ZenHub activity feed (pipeline moves, estimate changes, etc.)

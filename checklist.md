@@ -38,7 +38,7 @@
 - [x] `zh issue block <blocker> <blocked>`
 - [x] `zh issue blockers <issue>`
 - [x] `zh issue blocking <issue>`
-- [ ] `zh issue activity <issue>`
+- [x] `zh issue activity <issue>`
 
 ## label
 - [ ] `zh label list`

@@ -268,6 +268,67 @@ func TestDescribeZenHubEventTransferPipeline(t *testing.T) {
 	}
 }
 
+func TestDescribeZenHubEventChangePipeline(t *testing.T) {
+	data := map[string]any{
+		"from_pipeline": map[string]any{"name": "Backlog"},
+		"to_pipeline":   map[string]any{"name": "In Progress"},
+	}
+	desc := describeZenHubEvent("issue.change_pipeline", data)
+	if !strings.Contains(desc, "Backlog") || !strings.Contains(desc, "In Progress") {
+		t.Errorf("expected pipeline names in description, got: %s", desc)
+	}
+}
+
+func TestDescribeZenHubEventAddBlockingIssue(t *testing.T) {
+	data := map[string]any{
+		"blocking_issue":            map[string]any{"number": float64(2), "title": "Task list crashes"},
+		"blocking_issue_repository": map[string]any{"name": "task-tracker"},
+	}
+	desc := describeZenHubEvent("issue.add_blocking_issue", data)
+	if !strings.Contains(desc, "task-tracker#2") {
+		t.Errorf("expected blocking issue ref in description, got: %s", desc)
+	}
+	if !strings.Contains(desc, "Task list crashes") {
+		t.Errorf("expected blocking issue title in description, got: %s", desc)
+	}
+}
+
+func TestDescribeZenHubEventRemoveBlockingIssue(t *testing.T) {
+	data := map[string]any{
+		"blocking_issue":            map[string]any{"number": float64(2)},
+		"blocking_issue_repository": map[string]any{"name": "task-tracker"},
+	}
+	desc := describeZenHubEvent("issue.remove_blocking_issue", data)
+	if !strings.Contains(desc, "task-tracker#2") {
+		t.Errorf("expected blocking issue ref in description, got: %s", desc)
+	}
+}
+
+func TestDescribeZenHubEventConnectPRToIssue(t *testing.T) {
+	data := map[string]any{
+		"issue":            map[string]any{"number": float64(3), "title": "Add color output"},
+		"issue_repository": map[string]any{"name": "task-tracker"},
+	}
+	desc := describeZenHubEvent("issue.connect_pr_to_issue", data)
+	if !strings.Contains(desc, "task-tracker#3") {
+		t.Errorf("expected issue ref in description, got: %s", desc)
+	}
+	if !strings.Contains(desc, "connected to issue") {
+		t.Errorf("expected 'connected to issue' in description, got: %s", desc)
+	}
+}
+
+func TestDescribeZenHubEventDisconnectPRFromIssue(t *testing.T) {
+	data := map[string]any{
+		"issue":            map[string]any{"number": float64(3)},
+		"issue_repository": map[string]any{"name": "task-tracker"},
+	}
+	desc := describeZenHubEvent("issue.disconnect_pr_from_issue", data)
+	if !strings.Contains(desc, "task-tracker#3") {
+		t.Errorf("expected issue ref in description, got: %s", desc)
+	}
+}
+
 func TestDescribeZenHubEventUnknown(t *testing.T) {
 	desc := describeZenHubEvent("issue.some_unknown_event", nil)
 	if desc != "some unknown event" {

@@ -553,7 +553,38 @@ func describeZenHubEvent(key string, data map[string]any) string {
 		}
 		return "disconnected PR"
 
-	case "issue.transfer_pipeline":
+	case "issue.connect_pr_to_issue":
+		if issue, ok := data["issue"].(map[string]any); ok {
+			number := jsonInt(issue["number"])
+			title := jsonString(issue["title"])
+			repo := ""
+			if issueRepo, ok := data["issue_repository"].(map[string]any); ok {
+				repo = jsonString(issueRepo["name"])
+			}
+			if repo != "" && number > 0 {
+				ref := fmt.Sprintf("%s#%d", repo, number)
+				if title != "" {
+					return fmt.Sprintf("connected to issue %s %q", ref, truncateTitle(title))
+				}
+				return fmt.Sprintf("connected to issue %s", ref)
+			}
+		}
+		return "connected to issue"
+
+	case "issue.disconnect_pr_from_issue":
+		if issue, ok := data["issue"].(map[string]any); ok {
+			number := jsonInt(issue["number"])
+			repo := ""
+			if issueRepo, ok := data["issue_repository"].(map[string]any); ok {
+				repo = jsonString(issueRepo["name"])
+			}
+			if repo != "" && number > 0 {
+				return fmt.Sprintf("disconnected from issue %s#%d", repo, number)
+			}
+		}
+		return "disconnected from issue"
+
+	case "issue.change_pipeline", "issue.transfer_pipeline":
 		from := ""
 		to := ""
 		if fp, ok := data["from_pipeline"].(map[string]any); ok {
@@ -601,6 +632,37 @@ func describeZenHubEvent(key string, data map[string]any) string {
 			}
 		}
 		return "removed from epic"
+
+	case "issue.add_blocking_issue":
+		if bi, ok := data["blocking_issue"].(map[string]any); ok {
+			number := jsonInt(bi["number"])
+			title := jsonString(bi["title"])
+			repo := ""
+			if biRepo, ok := data["blocking_issue_repository"].(map[string]any); ok {
+				repo = jsonString(biRepo["name"])
+			}
+			if repo != "" && number > 0 {
+				ref := fmt.Sprintf("%s#%d", repo, number)
+				if title != "" {
+					return fmt.Sprintf("added blocking issue %s %q", ref, truncateTitle(title))
+				}
+				return fmt.Sprintf("added blocking issue %s", ref)
+			}
+		}
+		return "added blocking issue"
+
+	case "issue.remove_blocking_issue":
+		if bi, ok := data["blocking_issue"].(map[string]any); ok {
+			number := jsonInt(bi["number"])
+			repo := ""
+			if biRepo, ok := data["blocking_issue_repository"].(map[string]any); ok {
+				repo = jsonString(biRepo["name"])
+			}
+			if repo != "" && number > 0 {
+				return fmt.Sprintf("removed blocking issue %s#%d", repo, number)
+			}
+		}
+		return "removed blocking issue"
 
 	default:
 		// Return the key as-is for unrecognized events

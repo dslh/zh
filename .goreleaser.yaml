@@ -25,7 +25,8 @@ builds:
 
 archives:
   - id: default
-    format: tar.gz
+    formats:
+      - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:
@@ -39,15 +40,12 @@ changelog:
       - "^test:"
       - "^ci:"
 
-brews:
-  - repository:
+homebrew_casks:
+  - name: zh
+    repository:
       owner: dslh
       name: homebrew-tap
-    directory: Formula
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Casks
     homepage: "https://github.com/dslh/zh"
     description: "CLI for ZenHub"
-    license: "MIT"
-    install: |
-      bin.install "zh"
-    test: |
-      system "#{bin}/zh", "version"

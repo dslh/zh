@@ -52,6 +52,16 @@ type pipelineListEntry struct {
 
 // Issue types for pipeline show
 
+type connectedPrNode struct {
+	Number     int    `json:"number"`
+	Title      string `json:"title"`
+	State      string `json:"state"`
+	Repository struct {
+		Name      string `json:"name"`
+		OwnerName string `json:"ownerName"`
+	} `json:"repository"`
+}
+
 type pipelineIssueNode struct {
 	ID          string `json:"id"`
 	Number      int    `json:"number"`
@@ -78,6 +88,9 @@ type pipelineIssueNode struct {
 	BlockingIssues struct {
 		TotalCount int `json:"totalCount"`
 	} `json:"blockingIssues"`
+	ConnectedPrs struct {
+		Nodes []connectedPrNode `json:"nodes"`
+	} `json:"connectedPrs"`
 	PipelineIssue *struct {
 		Priority *struct {
 			Name string `json:"name"`
@@ -97,7 +110,7 @@ const listPipelinesFullQuery = `query ListPipelinesFull($workspaceId: ID!) {
         description
         stage
         isDefaultPRPipeline
-        issues {
+        issues(state: OPEN) {
           totalCount
         }
       }
@@ -120,7 +133,7 @@ const pipelineDetailQuery = `query GetPipelineDetails($pipelineId: ID!) {
         staleIssues
         staleInterval
       }
-      issues {
+      issues(state: OPEN) {
         totalCount
       }
     }
@@ -169,6 +182,14 @@ const pipelineIssuesQuery = `query GetPipelineIssues(
       }
       blockingIssues {
         totalCount
+      }
+      connectedPrs(first: 10) {
+        nodes {
+          number
+          title
+          state
+          repository { name ownerName }
+        }
       }
       pipelineIssue(workspaceId: $workspaceId) {
         priority {
@@ -454,9 +475,26 @@ func runPipelineShow(cmd *cobra.Command, args []string) error {
 	if pipelineShowAll {
 		limit = 0 // fetch all
 	}
-	issues, totalCount, err := fetchPipelineIssues(client, resolved.ID, cfg.Workspace, limit)
+	issues, _, err := fetchPipelineIssues(client, resolved.ID, cfg.Workspace, limit)
 	if err != nil {
 		return err
+	}
+
+	// Filter out closed issues (API doesn't support state filter for pipeline search)
+	originalLen := len(issues)
+	var openIssues []pipelineIssueNode
+	for _, issue := range issues {
+		if !strings.EqualFold(issue.State, "CLOSED") {
+			openIssues = append(openIssues, issue)
+		}
+	}
+	issues = openIssues
+
+	// Use the detail query's open-only count as the authoritative total
+	totalCount := detail.Issues.TotalCount
+	// Adjust if we filtered closed items from the fetched page
+	if closedFiltered := originalLen - len(issues); closedFiltered > 0 && totalCount > len(issues) {
+		totalCount -= closedFiltered
 	}
 
 	if output.IsJSON(outputFormat) {
@@ -475,6 +513,17 @@ func runPipelineShow(cmd *cobra.Command, args []string) error {
 	// Determine repo context for short references
 	needLongRef := repoNamesAmbiguous(issues)
 
+	// Count issues vs PRs from fetched items
+	issueCount := 0
+	prCount := 0
+	for _, issue := range issues {
+		if issue.PullRequest {
+			prCount++
+		} else {
+			issueCount++
+		}
+	}
+
 	// Detail view
 	d := output.NewDetailWriter(w, "PIPELINE", detail.Name)
 
@@ -491,7 +540,17 @@ func runPipelineShow(cmd *cobra.Command, args []string) error {
 		stage = formatStage(*detail.Stage)
 	}
 	fields = append(fields, output.KV("Stage", stage))
-	fields = append(fields, output.KV("Issues", fmt.Sprintf("%d", totalCount)))
+
+	// Show separate issue/PR counts when we have all items
+	if len(issues) >= totalCount {
+		fields = append(fields, output.KV("Issues", fmt.Sprintf("%d", issueCount)))
+		if prCount > 0 {
+			fields = append(fields, output.KV("PRs", fmt.Sprintf("%d", prCount)))
+		}
+	} else {
+		// Paginated: show total from API (can't determine exact split)
+		fields = append(fields, output.KV("Items", fmt.Sprintf("%d", totalCount)))
+	}
 
 	if detail.IsDefaultPRPipeline {
 		fields = append(fields, output.KV("Default PR pipeline", output.Green("yes")))
@@ -512,13 +571,17 @@ func runPipelineShow(cmd *cobra.Command, args []string) error {
 
 	d.Fields(fields)
 
-	// Issues section
+	// Items section
 	if len(issues) > 0 {
-		d.Section("ISSUES")
+		d.Section("ITEMS")
 
-		lw := output.NewListWriter(w, "ISSUE", "TITLE", "EST", "ASSIGNEE", "PRIORITY")
+		lw := output.NewListWriter(w, "ITEM", "TITLE", "EST", "ASSIGNEE", "PRIORITY")
 		for _, issue := range issues {
 			ref := formatIssueRef(issue, needLongRef)
+			if issue.PullRequest {
+				ref = output.Dim("PR ") + ref
+			}
+
 			title := issue.Title
 			if len(title) > 50 {
 				title = title[:47] + "..."
@@ -544,13 +607,30 @@ func runPipelineShow(cmd *cobra.Command, args []string) error {
 			}
 
 			lw.Row(ref, title, est, assignee, priority)
+
+			// Render connected PRs beneath parent issues
+			if !issue.PullRequest && len(issue.ConnectedPrs.Nodes) > 0 {
+				for _, pr := range issue.ConnectedPrs.Nodes {
+					prRef := formatConnectedPrRef(pr, needLongRef)
+					prTitle := pr.Title
+					if len(prTitle) > 50 {
+						prTitle = prTitle[:47] + "..."
+					}
+					lw.Row(
+						output.Dim("  └─ ")+output.Cyan(prRef),
+						prTitle,
+						output.Dim(strings.ToLower(pr.State)),
+						"", "",
+					)
+				}
+			}
 		}
 
-		footer := fmt.Sprintf("Showing %d of %d issue(s)", len(issues), totalCount)
+		footer := fmt.Sprintf("Showing %d of %d item(s)", len(issues), totalCount)
 		lw.FlushWithFooter(footer)
 	} else if totalCount > 0 {
-		d.Section("ISSUES")
-		fmt.Fprintf(w, "%d issue(s) in this pipeline.\n", totalCount)
+		d.Section("ITEMS")
+		fmt.Fprintf(w, "%d item(s) in this pipeline.\n", totalCount)
 	}
 
 	return nil
@@ -663,6 +743,14 @@ func formatIssueRef(issue pipelineIssueNode, longForm bool) string {
 		return fmt.Sprintf("%s/%s#%d", issue.Repository.OwnerName, issue.Repository.Name, issue.Number)
 	}
 	return fmt.Sprintf("%s#%d", issue.Repository.Name, issue.Number)
+}
+
+// formatConnectedPrRef formats a connected PR reference.
+func formatConnectedPrRef(pr connectedPrNode, longForm bool) string {
+	if longForm {
+		return fmt.Sprintf("%s/%s#%d", pr.Repository.OwnerName, pr.Repository.Name, pr.Number)
+	}
+	return fmt.Sprintf("%s#%d", pr.Repository.Name, pr.Number)
 }
 
 // repoNamesAmbiguous checks if any repo name appears with different owners

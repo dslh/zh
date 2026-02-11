@@ -243,14 +243,49 @@ func TestPipelineShow(t *testing.T) {
 	if !strings.Contains(out, "Development") {
 		t.Error("output should show stage")
 	}
-	if !strings.Contains(out, "ISSUES") {
-		t.Error("output should contain ISSUES section")
+	if !strings.Contains(out, "ITEMS") {
+		t.Error("output should contain ITEMS section")
+	}
+	if !strings.Contains(out, "ITEM") {
+		t.Error("output should contain ITEM column header")
 	}
 	if !strings.Contains(out, "Fix login") {
 		t.Error("output should contain issue title")
 	}
 	if !strings.Contains(out, "task-tracker#1") {
 		t.Error("output should contain issue reference")
+	}
+
+	// Check separate issue/PR counts (detail view adds alignment spaces)
+	if !strings.Contains(out, "Issues:") || !strings.Contains(out, "Issues") {
+		t.Errorf("output should show Issues count, got:\n%s", out)
+	}
+	if !strings.Contains(out, "PRs:") {
+		t.Errorf("output should show PRs count, got:\n%s", out)
+	}
+
+	// Check PR indicator
+	if !strings.Contains(out, "PR ") {
+		t.Error("output should contain PR indicator for pull requests")
+	}
+	if !strings.Contains(out, "task-tracker#5") {
+		t.Error("output should contain PR reference")
+	}
+
+	// Check connected PR rendering
+	if !strings.Contains(out, "└─") {
+		t.Error("output should contain connected PR tree indicator")
+	}
+	if !strings.Contains(out, "task-tracker#10") {
+		t.Error("output should contain connected PR reference")
+	}
+	if !strings.Contains(out, "Fix login alignment CSS") {
+		t.Error("output should contain connected PR title")
+	}
+
+	// Check footer wording
+	if !strings.Contains(out, "item(s)") {
+		t.Error("footer should use 'item(s)' not 'issue(s)'")
 	}
 }
 
@@ -740,7 +775,7 @@ func pipelineDetailResponseData() map[string]any {
 					"staleIssues":       true,
 					"staleInterval":     14,
 				},
-				"issues": map[string]any{"totalCount": 2},
+				"issues": map[string]any{"totalCount": 3},
 			},
 		},
 	}
@@ -750,7 +785,7 @@ func pipelineIssuesResponseData() map[string]any {
 	return map[string]any{
 		"data": map[string]any{
 			"searchIssuesByPipeline": map[string]any{
-				"totalCount": 2,
+				"totalCount": 3,
 				"pageInfo": map[string]any{
 					"hasNextPage": false,
 					"endCursor":   "",
@@ -778,24 +813,49 @@ func pipelineIssuesResponseData() map[string]any {
 							"ownerName": "dlakehammond",
 						},
 						"blockingIssues": map[string]any{"totalCount": 0},
+						"connectedPrs": map[string]any{
+							"nodes": []any{
+								map[string]any{
+									"number": 10,
+									"title":  "Fix login alignment CSS",
+									"state":  "OPEN",
+									"repository": map[string]any{
+										"name":      "task-tracker",
+										"ownerName": "dlakehammond",
+									},
+								},
+							},
+						},
 						"pipelineIssue": map[string]any{
 							"priority": map[string]any{"name": "High priority"},
 						},
 					},
 					map[string]any{
-						"id":          "i2",
-						"number":      2,
-						"title":       "Add error handling",
-						"state":       "OPEN",
-						"pullRequest": false,
-						"estimate":    nil,
-						"assignees":   map[string]any{"nodes": []any{}},
-						"labels":      map[string]any{"nodes": []any{}},
-						"repository": map[string]any{
-							"name":      "task-tracker",
-							"ownerName": "dlakehammond",
-						},
+						"id":             "i2",
+						"number":         2,
+						"title":          "Add error handling",
+						"state":          "OPEN",
+						"pullRequest":    false,
+						"estimate":       nil,
+						"assignees":      map[string]any{"nodes": []any{}},
+						"labels":         map[string]any{"nodes": []any{}},
+						"connectedPrs":   map[string]any{"nodes": []any{}},
+						"repository":     map[string]any{"name": "task-tracker", "ownerName": "dlakehammond"},
 						"blockingIssues": map[string]any{"totalCount": 1},
+						"pipelineIssue":  nil,
+					},
+					map[string]any{
+						"id":             "pr1",
+						"number":         5,
+						"title":          "Update dependencies",
+						"state":          "OPEN",
+						"pullRequest":    true,
+						"estimate":       nil,
+						"assignees":      map[string]any{"nodes": []any{}},
+						"labels":         map[string]any{"nodes": []any{}},
+						"connectedPrs":   map[string]any{"nodes": []any{}},
+						"repository":     map[string]any{"name": "task-tracker", "ownerName": "dlakehammond"},
+						"blockingIssues": map[string]any{"totalCount": 0},
 						"pipelineIssue":  nil,
 					},
 				},

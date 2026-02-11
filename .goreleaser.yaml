@@ -40,12 +40,16 @@ changelog:
       - "^test:"
       - "^ci:"
 
-homebrew_casks:
-  - name: zh
-    repository:
+brews:
+  - repository:
       owner: dslh
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Casks
+    directory: Formula
     homepage: "https://github.com/dslh/zh"
     description: "CLI for ZenHub"
+    license: "MIT"
+    install: |
+      bin.install "zh"
+    test: |
+      system "#{bin}/zh", "version"

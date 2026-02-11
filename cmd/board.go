@@ -66,7 +66,7 @@ const boardQuery = `query GetBoard($workspaceId: ID!) {
       nodes {
         id
         name
-        issues(first: 100) {
+        issues(first: 100, state: OPEN) {
           totalCount
           nodes {
             id
@@ -97,6 +97,73 @@ const boardQuery = `query GetBoard($workspaceId: ID!) {
               }
             }
           }
+        }
+      }
+    }
+  }
+  searchClosedIssues(workspaceId: $workspaceId, filters: {}, first: 100) {
+    totalCount
+    nodes {
+      id
+      number
+      title
+      state
+      pullRequest
+      estimate {
+        value
+      }
+      repository {
+        name
+        ownerName
+      }
+      assignees(first: 5) {
+        nodes {
+          login
+        }
+      }
+      labels(first: 10) {
+        nodes {
+          name
+        }
+      }
+      pipelineIssue(workspaceId: $workspaceId) {
+        priority {
+          name
+        }
+      }
+    }
+  }
+}`
+
+const closedIssuesQuery = `query SearchClosedIssues($workspaceId: ID!) {
+  searchClosedIssues(workspaceId: $workspaceId, filters: {}, first: 100) {
+    totalCount
+    nodes {
+      id
+      number
+      title
+      state
+      pullRequest
+      estimate {
+        value
+      }
+      repository {
+        name
+        ownerName
+      }
+      assignees(first: 5) {
+        nodes {
+          login
+        }
+      }
+      labels(first: 10) {
+        nodes {
+          name
+        }
+      }
+      pipelineIssue(workspaceId: $workspaceId) {
+        priority {
+          name
         }
       }
     }
@@ -159,6 +226,7 @@ func runBoard(cmd *cobra.Command, args []string) error {
 				Nodes []boardPipeline `json:"nodes"`
 			} `json:"pipelinesConnection"`
 		} `json:"workspace"`
+		SearchClosedIssues boardIssueConn `json:"searchClosedIssues"`
 	}
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return exitcode.General("parsing board response", err)
@@ -166,8 +234,17 @@ func runBoard(cmd *cobra.Command, args []string) error {
 
 	pipelines := resp.Workspace.PipelinesConnection.Nodes
 
-	// Cache pipeline list for resolution
+	// Cache pipeline list for resolution (before adding synthetic Closed pipeline)
 	cachePipelinesFromBoard(pipelines, cfg.Workspace)
+
+	// Append synthetic "Closed" pipeline if there are closed issues
+	if resp.SearchClosedIssues.TotalCount > 0 {
+		pipelines = append(pipelines, boardPipeline{
+			ID:     "closed",
+			Name:   "Closed",
+			Issues: resp.SearchClosedIssues,
+		})
+	}
 
 	if output.IsJSON(outputFormat) {
 		return output.JSON(w, pipelines)
@@ -217,6 +294,11 @@ func runBoard(cmd *cobra.Command, args []string) error {
 func runBoardSinglePipeline(cmd *cobra.Command, cfg *config.Config, client *api.Client) error {
 	w := cmd.OutOrStdout()
 
+	// Handle virtual "Closed" pipeline
+	if strings.EqualFold(boardPipelineFilter, "closed") {
+		return runBoardClosedPipeline(cmd, cfg, client)
+	}
+
 	// Resolve the pipeline
 	resolved, err := resolve.Pipeline(client, cfg.Workspace, boardPipelineFilter, cfg.Aliases.Pipelines)
 	if err != nil {
@@ -228,6 +310,17 @@ func runBoardSinglePipeline(cmd *cobra.Command, cfg *config.Config, client *api.
 	if err != nil {
 		return err
 	}
+
+	// Filter out closed issues (API doesn't support state filter for pipeline search)
+	originalLen := len(issues)
+	var openIssues []pipelineIssueNode
+	for _, issue := range issues {
+		if !strings.EqualFold(issue.State, "CLOSED") {
+			openIssues = append(openIssues, issue)
+		}
+	}
+	totalCount -= originalLen - len(openIssues)
+	issues = openIssues
 
 	if output.IsJSON(outputFormat) {
 		jsonOut := []struct {
@@ -269,6 +362,84 @@ func runBoardSinglePipeline(cmd *cobra.Command, cfg *config.Config, client *api.
 	fmt.Fprintf(w, "1 pipeline, %d issue(s)\n", totalCount)
 
 	return nil
+}
+
+// runBoardClosedPipeline fetches and displays the virtual "Closed" pipeline.
+func runBoardClosedPipeline(cmd *cobra.Command, cfg *config.Config, client *api.Client) error {
+	w := cmd.OutOrStdout()
+
+	data, err := client.Execute(closedIssuesQuery, map[string]any{
+		"workspaceId": cfg.Workspace,
+	})
+	if err != nil {
+		return exitcode.General("fetching closed issues", err)
+	}
+
+	var resp struct {
+		SearchClosedIssues boardIssueConn `json:"searchClosedIssues"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return exitcode.General("parsing closed issues response", err)
+	}
+
+	issues := resp.SearchClosedIssues.Nodes
+	totalCount := resp.SearchClosedIssues.TotalCount
+
+	if output.IsJSON(outputFormat) {
+		jsonOut := []struct {
+			ID     string         `json:"id"`
+			Name   string         `json:"name"`
+			Issues map[string]any `json:"issues"`
+		}{
+			{
+				ID:   "closed",
+				Name: "Closed",
+				Issues: map[string]any{
+					"totalCount": totalCount,
+					"nodes":      issues,
+				},
+			},
+		}
+		return output.JSON(w, jsonOut)
+	}
+
+	needLongRef := boardIssueRepoNamesAmbiguous(issues)
+
+	issueCountStr := fmt.Sprintf("%d", totalCount)
+	if len(issues) < totalCount {
+		issueCountStr = fmt.Sprintf("%d of %d", len(issues), totalCount)
+	}
+
+	fmt.Fprintf(w, "%s  %s\n", output.Bold("Closed"), output.Dim(fmt.Sprintf("(%s issues)", issueCountStr)))
+	fmt.Fprintln(w, strings.Repeat("─", 80))
+
+	if len(issues) == 0 {
+		fmt.Fprintln(w, output.Dim("  No issues"))
+	} else {
+		for _, issue := range issues {
+			renderBoardIssue(w, issue, needLongRef)
+		}
+	}
+
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "1 pipeline, %d issue(s)\n", totalCount)
+
+	return nil
+}
+
+// boardIssueRepoNamesAmbiguous checks if any repo name appears with different owners
+// in a set of board issue nodes.
+func boardIssueRepoNamesAmbiguous(issues []boardIssueNode) bool {
+	seen := make(map[string]string) // name -> owner
+	for _, issue := range issues {
+		name := issue.Repository.Name
+		owner := issue.Repository.OwnerName
+		if prev, ok := seen[name]; ok && prev != owner {
+			return true
+		}
+		seen[name] = owner
+	}
+	return false
 }
 
 // renderBoardIssue renders a single issue line for the board view.

@@ -127,11 +127,11 @@ func runIssueActivity(cmd *cobra.Command, args []string) error {
 		if ghClient == nil {
 			fmt.Fprintln(cmd.ErrOrStderr(), output.Yellow("Warning: --github flag ignored — GitHub access not configured"))
 		} else {
-			ghEvents, err := fetchGitHubTimeline(ghClient, issueInfo.RepoOwner, issueInfo.RepoName, issueInfo.Number)
+			ghResult, err := fetchGitHubTimeline(ghClient, issueInfo.RepoOwner, issueInfo.RepoName, issueInfo.Number)
 			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "%s\n", output.Yellow("Warning: failed to fetch GitHub timeline: "+err.Error()))
 			} else {
-				allEvents = append(allEvents, ghEvents...)
+				allEvents = append(allEvents, ghResult.Events...)
 			}
 		}
 	}

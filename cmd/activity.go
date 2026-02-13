@@ -19,17 +19,19 @@ import (
 
 // activityIssue holds an issue found during the activity scan.
 type activityIssue struct {
-	ID          string          `json:"id"`
-	Number      int             `json:"number"`
-	Title       string          `json:"title"`
-	Ref         string          `json:"ref"`
-	Pipeline    string          `json:"pipeline"`
-	UpdatedAt   time.Time       `json:"updatedAt"`
-	GhUpdatedAt time.Time       `json:"ghUpdatedAt,omitempty"`
-	Assignees   []string        `json:"assignees,omitempty"`
-	RepoName    string          `json:"repoName"`
-	RepoOwner   string          `json:"repoOwner"`
-	Events      []activityEvent `json:"events,omitempty"`
+	ID             string          `json:"id"`
+	Number         int             `json:"number"`
+	Title          string          `json:"title"`
+	Ref            string          `json:"ref"`
+	Pipeline       string          `json:"pipeline"`
+	UpdatedAt      time.Time       `json:"updatedAt"`
+	GhUpdatedAt    time.Time       `json:"ghUpdatedAt,omitempty"`
+	Assignees      []string        `json:"assignees,omitempty"`
+	RepoName       string          `json:"repoName"`
+	RepoOwner      string          `json:"repoOwner"`
+	IsPR           bool            `json:"isPR,omitempty"`
+	ConnectedIssue string          `json:"connectedIssue,omitempty"`
+	Events         []activityEvent `json:"events,omitempty"`
 }
 
 // GraphQL query for scanning pipeline issues ordered by updated_at
@@ -763,23 +765,58 @@ func fetchActivityTimelines(client *api.Client, ghClient *gh.Client, includeGitH
 				return
 			}
 
-			// Filter events to time range
+			// Filter events to time range, and extract connected issue for PRs
+			connectedIssue := ""
 			for _, ev := range zhEvents {
 				if !ev.Time.Before(fromTime) && !ev.Time.After(toTime) {
 					events = append(events, ev)
 				}
+				// Extract connected issue from PR→issue connection events
+				if raw, ok := ev.Raw.(map[string]any); ok {
+					if key, _ := raw["key"].(string); key == "issue.connect_pr_to_issue" {
+						if data, ok := raw["data"].(map[string]any); ok {
+							if iss, ok := data["issue"].(map[string]any); ok {
+								num := jsonInt(iss["number"])
+								repo := ""
+								if issRepo, ok := data["issue_repository"].(map[string]any); ok {
+									repo = jsonString(issRepo["name"])
+								}
+								if repo != "" && num > 0 {
+									connectedIssue = fmt.Sprintf("%s#%d", repo, num)
+								}
+							}
+						}
+					}
+				}
 			}
 
 			// Fetch GitHub timeline if requested
+			var isPR bool
+			var createdAt time.Time
 			if includeGitHub && ghClient != nil && issue.RepoOwner != "" {
-				ghEvents, err := fetchGitHubTimeline(ghClient, issue.RepoOwner, issue.RepoName, issue.Number)
+				ghResult, err := fetchGitHubTimeline(ghClient, issue.RepoOwner, issue.RepoName, issue.Number)
 				if err == nil {
-					for _, ev := range ghEvents {
+					isPR = ghResult.IsPR
+					createdAt = ghResult.CreatedAt
+					for _, ev := range ghResult.Events {
 						if !ev.Time.Before(fromTime) && !ev.Time.After(toTime) {
 							events = append(events, ev)
 						}
 					}
 				}
+			}
+
+			// Synthesize "created" event if creation is within the time range
+			if !createdAt.IsZero() && !createdAt.Before(fromTime) && !createdAt.After(toTime) {
+				desc := "created this issue"
+				if isPR {
+					desc = "opened this pull request"
+				}
+				events = append(events, activityEvent{
+					Time:        createdAt,
+					Source:      "GitHub",
+					Description: desc,
+				})
 			}
 
 			// Sort events chronologically
@@ -789,6 +826,10 @@ func fetchActivityTimelines(client *api.Client, ghClient *gh.Client, includeGitH
 
 			mu.Lock()
 			issue.Events = events
+			issue.IsPR = isPR
+			if connectedIssue != "" {
+				issue.ConnectedIssue = connectedIssue
+			}
 			mu.Unlock()
 		}(i)
 	}
@@ -797,10 +838,9 @@ func fetchActivityTimelines(client *api.Client, ghClient *gh.Client, includeGitH
 
 // Rendering functions
 
-func renderActivitySummary(w interface{ Write([]byte) (int, error) }, issues []activityIssue, fromTime, toTime time.Time) {
-	fmt.Fprintf(w, "Activity since %s\n\n", output.FormatDate(fromTime))
-
-	// Group by pipeline
+// groupByPipeline groups issues by pipeline, returning ordered pipeline names
+// with "Closed" sorted to the end.
+func groupByPipeline(issues []activityIssue) (map[string][]activityIssue, []string) {
 	groups := make(map[string][]activityIssue)
 	var pipelineOrder []string
 	for _, issue := range issues {
@@ -813,6 +853,32 @@ func renderActivitySummary(w interface{ Write([]byte) (int, error) }, issues []a
 		}
 		groups[pipeline] = append(groups[pipeline], issue)
 	}
+
+	// Move "Closed" to the end
+	for i, p := range pipelineOrder {
+		if p == "Closed" && i < len(pipelineOrder)-1 {
+			pipelineOrder = append(pipelineOrder[:i], pipelineOrder[i+1:]...)
+			pipelineOrder = append(pipelineOrder, "Closed")
+			break
+		}
+	}
+
+	return groups, pipelineOrder
+}
+
+// formatActivityRef formats the issue reference with a PR indicator if applicable.
+func formatActivityRef(issue activityIssue) string {
+	ref := issue.Ref
+	if issue.IsPR {
+		ref += " PR"
+	}
+	return ref
+}
+
+func renderActivitySummary(w interface{ Write([]byte) (int, error) }, issues []activityIssue, fromTime, toTime time.Time) {
+	fmt.Fprintf(w, "Activity since %s\n\n", output.FormatDate(fromTime))
+
+	groups, pipelineOrder := groupByPipeline(issues)
 
 	for i, pipeline := range pipelineOrder {
 		if i > 0 {
@@ -830,7 +896,8 @@ func renderActivitySummary(w interface{ Write([]byte) (int, error) }, issues []a
 				assignee = "@" + strings.Join(issue.Assignees, ", @")
 			}
 			ago := formatTimeAgo(issue.UpdatedAt)
-			line := fmt.Sprintf("  %s  %s", output.Cyan(fmt.Sprintf("%-20s", issue.Ref)), title)
+			ref := formatActivityRef(issue)
+			line := fmt.Sprintf("  %s  %s", output.Cyan(fmt.Sprintf("%-24s", ref)), title)
 			if assignee != "" {
 				line += "  " + output.Dim(assignee)
 			}
@@ -845,34 +912,44 @@ func renderActivitySummary(w interface{ Write([]byte) (int, error) }, issues []a
 func renderActivityDetail(w interface{ Write([]byte) (int, error) }, issues []activityIssue, fromTime, toTime time.Time, showSource bool) {
 	fmt.Fprintf(w, "Activity since %s\n", output.FormatDate(fromTime))
 
+	groups, pipelineOrder := groupByPipeline(issues)
+
 	totalEvents := 0
-	for i, issue := range issues {
-		if i > 0 {
+	first := true
+	for _, pipeline := range pipelineOrder {
+		if !first {
 			fmt.Fprintln(w)
 		}
-		pipeline := issue.Pipeline
-		if pipeline == "" {
-			pipeline = "Unknown"
-		}
-		fmt.Fprintf(w, "\n%s: %s  %s\n", output.Cyan(issue.Ref), issue.Title, output.Dim("["+pipeline+"]"))
+		first = false
+		pipelineIssues := groups[pipeline]
+		fmt.Fprintf(w, "\n%s\n", output.Bold(pipeline))
 
-		if len(issue.Events) == 0 {
-			fmt.Fprintln(w, output.Dim("  (no events in time range)"))
-			continue
-		}
+		for _, issue := range pipelineIssues {
+			ref := formatActivityRef(issue)
+			header := fmt.Sprintf("\n%s: %s", output.Cyan(ref), issue.Title)
+			if issue.ConnectedIssue != "" {
+				header += "  " + output.Dim("→ "+issue.ConnectedIssue)
+			}
+			fmt.Fprintln(w, header)
 
-		for _, ev := range issue.Events {
-			dateStr := ev.Time.Format("Jan 2 15:04")
-			actor := ""
-			if ev.Actor != "" {
-				actor = "@" + ev.Actor + " "
+			if len(issue.Events) == 0 {
+				fmt.Fprintln(w, output.Dim("  (no events in time range)"))
+				continue
 			}
-			line := fmt.Sprintf("  %s  %s%s", output.Dim(dateStr), actor, ev.Description)
-			if showSource {
-				line += "  " + output.Dim("["+ev.Source+"]")
+
+			for _, ev := range issue.Events {
+				dateStr := ev.Time.Format("Jan 2 15:04")
+				actor := ""
+				if ev.Actor != "" {
+					actor = "@" + ev.Actor + " "
+				}
+				line := fmt.Sprintf("  %s  %s%s", output.Dim(dateStr), actor, ev.Description)
+				if showSource {
+					line += "  " + output.Dim("["+ev.Source+"]")
+				}
+				fmt.Fprintln(w, line)
+				totalEvents++
 			}
-			fmt.Fprintln(w, line)
-			totalEvents++
 		}
 	}
 

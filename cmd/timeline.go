@@ -84,6 +84,13 @@ const githubIssueTimelineQuery = `query GetGitHubTimeline($owner: String!, $repo
             ... on RenamedTitleEvent { createdAt actor { login } previousTitle currentTitle }
             ... on MilestonedEvent { createdAt actor { login } milestoneTitle }
             ... on DemilestonedEvent { createdAt actor { login } milestoneTitle }
+            ... on IssueTypeAddedEvent { createdAt actor { login } issueType { name } }
+            ... on IssueTypeChangedEvent { createdAt actor { login } issueType { name } prevIssueType { name } }
+            ... on IssueTypeRemovedEvent { createdAt actor { login } issueType { name } }
+            ... on ParentIssueAddedEvent { createdAt actor { login } parent { number title repository { name } } }
+            ... on ParentIssueRemovedEvent { createdAt actor { login } parent { number title repository { name } } }
+            ... on SubIssueAddedEvent { createdAt actor { login } subIssue { number title repository { name } } }
+            ... on SubIssueRemovedEvent { createdAt actor { login } subIssue { number title repository { name } } }
           }
         }
       }
@@ -109,6 +116,12 @@ const githubIssueTimelineQuery = `query GetGitHubTimeline($owner: String!, $repo
             ... on DemilestonedEvent { createdAt actor { login } milestoneTitle }
             ... on MergedEvent { createdAt actor { login } }
             ... on HeadRefDeletedEvent { createdAt actor { login } }
+            ... on PullRequestCommit { commit { committedDate message author { user { login } } } }
+            ... on PullRequestReview { createdAt author { login } state }
+            ... on ReviewRequestedEvent { createdAt actor { login } requestedReviewer { ... on User { login } } }
+            ... on HeadRefForcePushedEvent { createdAt actor { login } }
+            ... on ReadyForReviewEvent { createdAt actor { login } }
+            ... on ConvertToDraftEvent { createdAt actor { login } }
           }
         }
       }
@@ -525,6 +538,15 @@ func parseGitHubTimelineItem(raw json.RawMessage) *activityEvent {
 		Author *struct {
 			Login string `json:"login"`
 		} `json:"author"`
+		// PullRequestCommit has no createdAt; time is nested under commit
+		Commit *struct {
+			CommittedDate string `json:"committedDate"`
+			Author        *struct {
+				User *struct {
+					Login string `json:"login"`
+				} `json:"user"`
+			} `json:"author"`
+		} `json:"commit"`
 	}
 	if err := json.Unmarshal(raw, &base); err != nil {
 		return nil
@@ -533,7 +555,13 @@ func parseGitHubTimelineItem(raw json.RawMessage) *activityEvent {
 		return nil
 	}
 
-	t, err := time.Parse(time.RFC3339, base.CreatedAt)
+	// PullRequestCommit uses commit.committedDate instead of createdAt
+	timeStr := base.CreatedAt
+	if base.TypeName == "PullRequestCommit" && base.Commit != nil {
+		timeStr = base.Commit.CommittedDate
+	}
+
+	t, err := time.Parse(time.RFC3339, timeStr)
 	if err != nil {
 		return nil
 	}
@@ -543,6 +571,10 @@ func parseGitHubTimelineItem(raw json.RawMessage) *activityEvent {
 		actor = base.Actor.Login
 	} else if base.Author != nil {
 		actor = base.Author.Login
+	}
+	// PullRequestCommit actor is nested under commit.author.user
+	if actor == "" && base.Commit != nil && base.Commit.Author != nil && base.Commit.Author.User != nil {
+		actor = base.Commit.Author.User.Login
 	}
 
 	description := describeGitHubEvent(base.TypeName, raw)
@@ -658,6 +690,164 @@ func describeGitHubEvent(typename string, raw json.RawMessage) string {
 
 	case "HeadRefDeletedEvent":
 		return "deleted the branch"
+
+	case "PullRequestCommit":
+		var ev struct {
+			Commit struct {
+				Message string `json:"message"`
+			} `json:"commit"`
+		}
+		_ = json.Unmarshal(raw, &ev)
+		msg := ev.Commit.Message
+		// Use first line only
+		if idx := strings.IndexByte(msg, '\n'); idx >= 0 {
+			msg = msg[:idx]
+		}
+		if len(msg) > 60 {
+			msg = msg[:57] + "..."
+		}
+		if msg != "" {
+			return fmt.Sprintf("pushed commit: %s", msg)
+		}
+		return "pushed a commit"
+
+	case "PullRequestReview":
+		var ev struct {
+			State string `json:"state"`
+		}
+		_ = json.Unmarshal(raw, &ev)
+		switch strings.ToUpper(ev.State) {
+		case "APPROVED":
+			return "approved this pull request"
+		case "CHANGES_REQUESTED":
+			return "requested changes"
+		case "COMMENTED":
+			return "reviewed (commented)"
+		case "DISMISSED":
+			return "review dismissed"
+		default:
+			return "reviewed this pull request"
+		}
+
+	case "ReviewRequestedEvent":
+		var ev struct {
+			RequestedReviewer struct {
+				Login string `json:"login"`
+			} `json:"requestedReviewer"`
+		}
+		_ = json.Unmarshal(raw, &ev)
+		if ev.RequestedReviewer.Login != "" {
+			return fmt.Sprintf("requested review from @%s", ev.RequestedReviewer.Login)
+		}
+		return "requested a review"
+
+	case "HeadRefForcePushedEvent":
+		return "force-pushed the branch"
+
+	case "ReadyForReviewEvent":
+		return "marked as ready for review"
+
+	case "ConvertToDraftEvent":
+		return "converted to draft"
+
+	case "IssueTypeAddedEvent":
+		var ev struct {
+			IssueType *struct {
+				Name string `json:"name"`
+			} `json:"issueType"`
+		}
+		_ = json.Unmarshal(raw, &ev)
+		if ev.IssueType != nil && ev.IssueType.Name != "" {
+			return fmt.Sprintf("set issue type to %q", ev.IssueType.Name)
+		}
+		return "set issue type"
+
+	case "IssueTypeChangedEvent":
+		var ev struct {
+			IssueType *struct {
+				Name string `json:"name"`
+			} `json:"issueType"`
+			PrevIssueType *struct {
+				Name string `json:"name"`
+			} `json:"prevIssueType"`
+		}
+		_ = json.Unmarshal(raw, &ev)
+		from := ""
+		to := ""
+		if ev.PrevIssueType != nil {
+			from = ev.PrevIssueType.Name
+		}
+		if ev.IssueType != nil {
+			to = ev.IssueType.Name
+		}
+		if from != "" && to != "" {
+			return fmt.Sprintf("changed issue type from %q to %q", from, to)
+		}
+		return "changed issue type"
+
+	case "IssueTypeRemovedEvent":
+		var ev struct {
+			IssueType *struct {
+				Name string `json:"name"`
+			} `json:"issueType"`
+		}
+		_ = json.Unmarshal(raw, &ev)
+		if ev.IssueType != nil && ev.IssueType.Name != "" {
+			return fmt.Sprintf("removed issue type %q", ev.IssueType.Name)
+		}
+		return "removed issue type"
+
+	case "ParentIssueAddedEvent":
+		var ev struct {
+			Parent *struct {
+				Number int    `json:"number"`
+				Title  string `json:"title"`
+			} `json:"parent"`
+		}
+		_ = json.Unmarshal(raw, &ev)
+		if ev.Parent != nil && ev.Parent.Number > 0 {
+			return fmt.Sprintf("added parent issue #%d %q", ev.Parent.Number, truncateTitle(ev.Parent.Title))
+		}
+		return "added parent issue"
+
+	case "ParentIssueRemovedEvent":
+		var ev struct {
+			Parent *struct {
+				Number int    `json:"number"`
+				Title  string `json:"title"`
+			} `json:"parent"`
+		}
+		_ = json.Unmarshal(raw, &ev)
+		if ev.Parent != nil && ev.Parent.Number > 0 {
+			return fmt.Sprintf("removed parent issue #%d %q", ev.Parent.Number, truncateTitle(ev.Parent.Title))
+		}
+		return "removed parent issue"
+
+	case "SubIssueAddedEvent":
+		var ev struct {
+			SubIssue *struct {
+				Number int    `json:"number"`
+				Title  string `json:"title"`
+			} `json:"subIssue"`
+		}
+		_ = json.Unmarshal(raw, &ev)
+		if ev.SubIssue != nil && ev.SubIssue.Number > 0 {
+			return fmt.Sprintf("added sub-issue #%d %q", ev.SubIssue.Number, truncateTitle(ev.SubIssue.Title))
+		}
+		return "added sub-issue"
+
+	case "SubIssueRemovedEvent":
+		var ev struct {
+			SubIssue *struct {
+				Number int    `json:"number"`
+				Title  string `json:"title"`
+			} `json:"subIssue"`
+		}
+		_ = json.Unmarshal(raw, &ev)
+		if ev.SubIssue != nil && ev.SubIssue.Number > 0 {
+			return fmt.Sprintf("removed sub-issue #%d %q", ev.SubIssue.Number, truncateTitle(ev.SubIssue.Title))
+		}
+		return "removed sub-issue"
 
 	default:
 		return ""

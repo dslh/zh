@@ -429,6 +429,7 @@ func TestBoardFilteredPipelineFiltersClosedIssues(t *testing.T) {
 							"ownerName": "dlakehammond",
 						},
 						"blockingIssues": map[string]any{"totalCount": 0},
+						"connectedPrs":   map[string]any{"nodes": []any{}},
 						"pipelineIssue":  nil,
 					},
 					map[string]any{
@@ -445,6 +446,7 @@ func TestBoardFilteredPipelineFiltersClosedIssues(t *testing.T) {
 							"ownerName": "dlakehammond",
 						},
 						"blockingIssues": map[string]any{"totalCount": 0},
+						"connectedPrs":   map[string]any{"nodes": []any{}},
 						"pipelineIssue":  nil,
 					},
 					map[string]any{
@@ -461,6 +463,7 @@ func TestBoardFilteredPipelineFiltersClosedIssues(t *testing.T) {
 							"ownerName": "dlakehammond",
 						},
 						"blockingIssues": map[string]any{"totalCount": 0},
+						"connectedPrs":   map[string]any{"nodes": []any{}},
 						"pipelineIssue":  nil,
 					},
 				},
@@ -508,6 +511,151 @@ func TestBoardFilteredPipelineFiltersClosedIssues(t *testing.T) {
 	// Count should reflect filtering (3 total - 1 closed = 2)
 	if !strings.Contains(out, "2 issue(s)") {
 		t.Errorf("output should show 2 issues after filtering, got: %s", out)
+	}
+}
+
+func TestBoardFilteredPipelineConnectedPrs(t *testing.T) {
+	resetBoardFlags()
+	resetPipelineFlags()
+
+	ms := testutil.NewMockServer(t)
+	ms.HandleQuery("ListPipelines", pipelineResolutionResponse())
+	ms.HandleQuery("GetPipelineIssues", pipelineIssuesWithConnectedPrResponse())
+
+	cacheDir := t.TempDir()
+	configDir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cacheDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+	t.Setenv("ZH_API_KEY", "test-key")
+	t.Setenv("ZH_WORKSPACE", "ws-123")
+	t.Setenv("ZH_GITHUB_TOKEN", "")
+
+	origNew := apiNewFunc
+	apiNewFunc = func(apiKey string, opts ...api.Option) *api.Client {
+		return api.New(apiKey, append(opts, api.WithEndpoint(ms.URL()))...)
+	}
+	defer func() { apiNewFunc = origNew }()
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"board", "--pipeline=In Development"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("board --pipeline returned error: %v", err)
+	}
+
+	out := buf.String()
+
+	// Connected PR should appear indented under parent issue
+	if !strings.Contains(out, "└─") {
+		t.Error("output should contain tree indicator for connected PR")
+	}
+	if !strings.Contains(out, "Fix login alignment CSS") {
+		t.Error("output should contain connected PR title")
+	}
+
+	// The connected PR (task-tracker#10) also appears as a top-level item —
+	// it should be deduplicated (not shown as top-level)
+	lines := strings.Split(out, "\n")
+	topLevelPR := false
+	for _, line := range lines {
+		if strings.Contains(line, "task-tracker#10") && !strings.Contains(line, "└─") {
+			topLevelPR = true
+			break
+		}
+	}
+	if topLevelPR {
+		t.Error("connected PR should not appear as top-level item when it is attached to an issue")
+	}
+
+	// Unconnected PR (task-tracker#5) should still appear as top-level
+	if !strings.Contains(out, "task-tracker#5") {
+		t.Error("unconnected PR should appear as top-level item")
+	}
+}
+
+func pipelineIssuesWithConnectedPrResponse() map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"searchIssuesByPipeline": map[string]any{
+				"totalCount": 4,
+				"pageInfo": map[string]any{
+					"hasNextPage": false,
+					"endCursor":   "",
+				},
+				"nodes": []any{
+					map[string]any{
+						"id":          "i1",
+						"number":      1,
+						"title":       "Fix login button alignment",
+						"state":       "OPEN",
+						"pullRequest": false,
+						"estimate":    map[string]any{"value": 3},
+						"assignees": map[string]any{
+							"nodes": []any{
+								map[string]any{"login": "dlakehammond"},
+							},
+						},
+						"labels":         map[string]any{"nodes": []any{}},
+						"repository":     map[string]any{"name": "task-tracker", "ownerName": "dlakehammond"},
+						"blockingIssues": map[string]any{"totalCount": 0},
+						"connectedPrs": map[string]any{
+							"nodes": []any{
+								map[string]any{
+									"number":     10,
+									"title":      "Fix login alignment CSS",
+									"state":      "OPEN",
+									"repository": map[string]any{"name": "task-tracker", "ownerName": "dlakehammond"},
+								},
+							},
+						},
+						"pipelineIssue": nil,
+					},
+					map[string]any{
+						"id":             "pr-10",
+						"number":         10,
+						"title":          "Fix login alignment CSS",
+						"state":          "OPEN",
+						"pullRequest":    true,
+						"estimate":       nil,
+						"assignees":      map[string]any{"nodes": []any{}},
+						"labels":         map[string]any{"nodes": []any{}},
+						"repository":     map[string]any{"name": "task-tracker", "ownerName": "dlakehammond"},
+						"blockingIssues": map[string]any{"totalCount": 0},
+						"connectedPrs":   map[string]any{"nodes": []any{}},
+						"pipelineIssue":  nil,
+					},
+					map[string]any{
+						"id":             "i2",
+						"number":         2,
+						"title":          "Add error handling",
+						"state":          "OPEN",
+						"pullRequest":    false,
+						"estimate":       nil,
+						"assignees":      map[string]any{"nodes": []any{}},
+						"labels":         map[string]any{"nodes": []any{}},
+						"repository":     map[string]any{"name": "task-tracker", "ownerName": "dlakehammond"},
+						"blockingIssues": map[string]any{"totalCount": 0},
+						"connectedPrs":   map[string]any{"nodes": []any{}},
+						"pipelineIssue":  nil,
+					},
+					map[string]any{
+						"id":             "pr-5",
+						"number":         5,
+						"title":          "Update dependencies",
+						"state":          "OPEN",
+						"pullRequest":    true,
+						"estimate":       nil,
+						"assignees":      map[string]any{"nodes": []any{}},
+						"labels":         map[string]any{"nodes": []any{}},
+						"repository":     map[string]any{"name": "task-tracker", "ownerName": "dlakehammond"},
+						"blockingIssues": map[string]any{"totalCount": 0},
+						"connectedPrs":   map[string]any{"nodes": []any{}},
+						"pipelineIssue":  nil,
+					},
+				},
+			},
+		},
 	}
 }
 
@@ -614,6 +762,7 @@ func boardIssueData(id string, number int, title, state string, pullRequest bool
 			"ownerName": owner,
 		},
 		"labels":        map[string]any{"nodes": []any{}},
+		"connectedPrs":  map[string]any{"nodes": []any{}},
 		"pipelineIssue": nil,
 	}
 
@@ -632,4 +781,30 @@ func boardIssueData(id string, number int, title, state string, pullRequest bool
 	}
 
 	return issue
+}
+
+func boardIssueDataWithPrs(id string, number int, title, state string, pullRequest bool, estimate float64, repo, owner, assignee string, prs ...map[string]any) map[string]any {
+	issue := boardIssueData(id, number, title, state, pullRequest, estimate, repo, owner, assignee)
+	issue["connectedPrs"] = map[string]any{"nodes": toAnySlice(prs)}
+	return issue
+}
+
+func toAnySlice(items []map[string]any) []any {
+	result := make([]any, len(items))
+	for i, item := range items {
+		result[i] = item
+	}
+	return result
+}
+
+func connectedPrData(number int, title, state, repo, owner string) map[string]any {
+	return map[string]any{
+		"number": number,
+		"title":  title,
+		"state":  state,
+		"repository": map[string]any{
+			"name":      repo,
+			"ownerName": owner,
+		},
+	}
 }

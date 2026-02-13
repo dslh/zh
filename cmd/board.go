@@ -49,6 +49,9 @@ type boardIssueNode struct {
 			Name string `json:"name"`
 		} `json:"nodes"`
 	} `json:"labels"`
+	ConnectedPrs struct {
+		Nodes []connectedPrNode `json:"nodes"`
+	} `json:"connectedPrs"`
 	PipelineIssue *struct {
 		Priority *struct {
 			Name string `json:"name"`
@@ -159,6 +162,14 @@ const closedIssuesQuery = `query SearchClosedIssues($workspaceId: ID!) {
       labels(first: 10) {
         nodes {
           name
+        }
+      }
+      connectedPrs(first: 10) {
+        nodes {
+          number
+          title
+          state
+          repository { name ownerName }
         }
       }
       pipelineIssue(workspaceId: $workspaceId) {
@@ -353,8 +364,13 @@ func runBoardSinglePipeline(cmd *cobra.Command, cfg *config.Config, client *api.
 	if len(issues) == 0 {
 		fmt.Fprintln(w, output.Dim("  No issues"))
 	} else {
+		connectedPRs := collectPipelineConnectedPRKeys(issues)
 		for _, issue := range issues {
+			if issue.PullRequest && connectedPRs[prKey(issue.Repository.OwnerName, issue.Repository.Name, issue.Number)] {
+				continue
+			}
 			renderBoardIssueFromPipelineNode(w, issue, needLongRef)
+			renderConnectedPrs(w, issue.ConnectedPrs.Nodes, needLongRef)
 		}
 	}
 
@@ -416,8 +432,13 @@ func runBoardClosedPipeline(cmd *cobra.Command, cfg *config.Config, client *api.
 	if len(issues) == 0 {
 		fmt.Fprintln(w, output.Dim("  No issues"))
 	} else {
+		connectedPRs := collectConnectedPRKeys(issues)
 		for _, issue := range issues {
+			if issue.PullRequest && connectedPRs[prKey(issue.Repository.OwnerName, issue.Repository.Name, issue.Number)] {
+				continue
+			}
 			renderBoardIssue(w, issue, needLongRef)
+			renderConnectedPrs(w, issue.ConnectedPrs.Nodes, needLongRef)
 		}
 	}
 
@@ -465,6 +486,55 @@ func renderBoardIssue(w interface{ Write([]byte) (int, error) }, issue boardIssu
 	}
 
 	fmt.Fprintf(w, "  %s  %s%s%s\n", output.Cyan(ref), title, output.Dim(est), output.Dim(assignee))
+}
+
+// renderConnectedPrs renders connected PRs indented beneath their parent issue.
+func renderConnectedPrs(w interface{ Write([]byte) (int, error) }, prs []connectedPrNode, longRef bool) {
+	for _, pr := range prs {
+		ref := formatConnectedPrRef(pr, longRef)
+		title := pr.Title
+		if len(title) > 50 {
+			title = title[:47] + "..."
+		}
+		fmt.Fprintf(w, "    %s %s %s\n",
+			output.Dim("└─"),
+			output.Cyan(ref),
+			output.Dim(title+" ("+strings.ToLower(pr.State)+")"))
+	}
+}
+
+// prKey builds a dedup key for a PR from its owner, repo, and number.
+func prKey(owner, repo string, number int) string {
+	return fmt.Sprintf("%s/%s#%d", owner, repo, number)
+}
+
+// collectConnectedPRKeys collects the set of PR keys that are connected to
+// non-PR issues in the list, for deduplication of top-level items.
+func collectConnectedPRKeys(issues []boardIssueNode) map[string]bool {
+	keys := make(map[string]bool)
+	for _, issue := range issues {
+		if issue.PullRequest {
+			continue
+		}
+		for _, pr := range issue.ConnectedPrs.Nodes {
+			keys[prKey(pr.Repository.OwnerName, pr.Repository.Name, pr.Number)] = true
+		}
+	}
+	return keys
+}
+
+// collectPipelineConnectedPRKeys collects connected PR keys from pipelineIssueNodes.
+func collectPipelineConnectedPRKeys(issues []pipelineIssueNode) map[string]bool {
+	keys := make(map[string]bool)
+	for _, issue := range issues {
+		if issue.PullRequest {
+			continue
+		}
+		for _, pr := range issue.ConnectedPrs.Nodes {
+			keys[prKey(pr.Repository.OwnerName, pr.Repository.Name, pr.Number)] = true
+		}
+	}
+	return keys
 }
 
 // renderBoardIssueFromPipelineNode renders a pipelineIssueNode for --pipeline board view.

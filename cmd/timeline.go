@@ -65,6 +65,7 @@ const githubIssueTimelineQuery = `query GetGitHubTimeline($owner: String!, $repo
   repository(owner: $owner, name: $repo) {
     issueOrPullRequest(number: $number) {
       ... on Issue {
+        userContentEdits(first: 1) { nodes { createdAt editor { login } } }
         timelineItems(first: $first, after: $after) {
           totalCount
           pageInfo {
@@ -95,6 +96,7 @@ const githubIssueTimelineQuery = `query GetGitHubTimeline($owner: String!, $repo
         }
       }
       ... on PullRequest {
+        userContentEdits(first: 1) { nodes { createdAt editor { login } } }
         timelineItems(first: $first, after: $after) {
           totalCount
           pageInfo {
@@ -498,6 +500,14 @@ func fetchGitHubTimeline(ghClient *gh.Client, owner, repo string, number int) ([
 		}
 
 		var timeline struct {
+			UserContentEdits *struct {
+				Nodes []struct {
+					CreatedAt string `json:"createdAt"`
+					Editor    *struct {
+						Login string `json:"login"`
+					} `json:"editor"`
+				} `json:"nodes"`
+			} `json:"userContentEdits"`
 			TimelineItems struct {
 				TotalCount int `json:"totalCount"`
 				PageInfo   struct {
@@ -509,6 +519,26 @@ func fetchGitHubTimeline(ghClient *gh.Client, owner, repo string, number int) ([
 		}
 		if err := json.Unmarshal(resp.Repository.IssueOrPullRequest, &timeline); err != nil {
 			return nil, fmt.Errorf("parsing GitHub timeline items: %w", err)
+		}
+
+		// On first page, check for recent description edits
+		if cursor == nil && timeline.UserContentEdits != nil {
+			for _, edit := range timeline.UserContentEdits.Nodes {
+				t, err := time.Parse(time.RFC3339, edit.CreatedAt)
+				if err != nil {
+					continue
+				}
+				actor := ""
+				if edit.Editor != nil {
+					actor = edit.Editor.Login
+				}
+				allEvents = append(allEvents, activityEvent{
+					Time:        t,
+					Source:      "GitHub",
+					Description: "edited description",
+					Actor:       actor,
+				})
+			}
 		}
 
 		for _, raw := range timeline.TimelineItems.Nodes {

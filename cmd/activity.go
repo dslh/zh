@@ -765,28 +765,10 @@ func fetchActivityTimelines(client *api.Client, ghClient *gh.Client, includeGitH
 				return
 			}
 
-			// Filter events to time range, and extract connected issue for PRs
-			connectedIssue := ""
+			// Filter events to time range
 			for _, ev := range zhEvents {
 				if !ev.Time.Before(fromTime) && !ev.Time.After(toTime) {
 					events = append(events, ev)
-				}
-				// Extract connected issue from PR→issue connection events
-				if raw, ok := ev.Raw.(map[string]any); ok {
-					if key, _ := raw["key"].(string); key == "issue.connect_pr_to_issue" {
-						if data, ok := raw["data"].(map[string]any); ok {
-							if iss, ok := data["issue"].(map[string]any); ok {
-								num := jsonInt(iss["number"])
-								repo := ""
-								if issRepo, ok := data["issue_repository"].(map[string]any); ok {
-									repo = jsonString(issRepo["name"])
-								}
-								if repo != "" && num > 0 {
-									connectedIssue = fmt.Sprintf("%s#%d", repo, num)
-								}
-							}
-						}
-					}
 				}
 			}
 
@@ -804,6 +786,12 @@ func fetchActivityTimelines(client *api.Client, ghClient *gh.Client, includeGitH
 						}
 					}
 				}
+			}
+
+			// For PRs, fetch connected issues via ZenHub connections field
+			var connectedIssue string
+			if isPR {
+				connectedIssue = fetchPRConnection(client, issue.ID)
 			}
 
 			// Synthesize "created" event if creation is within the time range
@@ -827,9 +815,7 @@ func fetchActivityTimelines(client *api.Client, ghClient *gh.Client, includeGitH
 			mu.Lock()
 			issue.Events = events
 			issue.IsPR = isPR
-			if connectedIssue != "" {
-				issue.ConnectedIssue = connectedIssue
-			}
+			issue.ConnectedIssue = connectedIssue
 			mu.Unlock()
 		}(i)
 	}
@@ -837,6 +823,49 @@ func fetchActivityTimelines(client *api.Client, ghClient *gh.Client, includeGitH
 }
 
 // Rendering functions
+
+const prConnectionQuery = `query PRConnections($id: ID!) {
+  node(id: $id) {
+    ... on Issue {
+      connections(first: 1) {
+        nodes {
+          number
+          repository { name }
+        }
+      }
+    }
+  }
+}`
+
+// fetchPRConnection fetches the connected issue for a PR via ZenHub's connections field.
+func fetchPRConnection(client *api.Client, nodeID string) string {
+	data, err := client.Execute(prConnectionQuery, map[string]any{"id": nodeID})
+	if err != nil {
+		return ""
+	}
+	var resp struct {
+		Node *struct {
+			Connections struct {
+				Nodes []struct {
+					Number     int `json:"number"`
+					Repository struct {
+						Name string `json:"name"`
+					} `json:"repository"`
+				} `json:"nodes"`
+			} `json:"connections"`
+		} `json:"node"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil || resp.Node == nil {
+		return ""
+	}
+	if len(resp.Node.Connections.Nodes) > 0 {
+		conn := resp.Node.Connections.Nodes[0]
+		if conn.Repository.Name != "" && conn.Number > 0 {
+			return fmt.Sprintf("%s#%d", conn.Repository.Name, conn.Number)
+		}
+	}
+	return ""
+}
 
 // groupByPipeline groups issues by pipeline, returning ordered pipeline names
 // with "Closed" sorted to the end.

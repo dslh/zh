@@ -342,7 +342,7 @@ func runActivity(cmd *cobra.Command, args []string) error {
 		if ghClient == nil {
 			fmt.Fprintln(cmd.ErrOrStderr(), output.Yellow("Warning: --github flag ignored — GitHub access not configured"))
 		} else {
-			ghIssues, err := searchGitHubActivity(client, ghClient, cfg.Workspace, fromTime)
+			ghIssues, repos, err := searchGitHubActivity(client, ghClient, cfg.Workspace, fromTime)
 			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "%s\n", output.Yellow("Warning: GitHub search failed: "+err.Error()))
 			} else {
@@ -352,12 +352,19 @@ func runActivity(cmd *cobra.Command, args []string) error {
 				for _, issue := range issueMap {
 					refSeen[issue.Ref] = true
 				}
+				var ghOnly []*activityIssue
 				for i := range ghIssues {
 					issue := &ghIssues[i]
 					if !refSeen[issue.Ref] {
 						issueMap[issue.ID] = issue
 						refSeen[issue.Ref] = true
+						ghOnly = append(ghOnly, issue)
 					}
+				}
+
+				// Resolve pipelines for GitHub-sourced items
+				if len(ghOnly) > 0 {
+					resolveGitHubIssuePipelines(client, cfg.Workspace, ghOnly, repos, issueMap)
 				}
 			}
 		}
@@ -618,15 +625,15 @@ func scanClosedActivity(client *api.Client, workspaceID string, fromTime, toTime
 }
 
 // searchGitHubActivity searches GitHub for recently updated issues/PRs
-// across all workspace repos.
-func searchGitHubActivity(client *api.Client, ghClient *gh.Client, workspaceID string, fromTime time.Time) ([]activityIssue, error) {
+// across all workspace repos. Returns the discovered issues and the repo list.
+func searchGitHubActivity(client *api.Client, ghClient *gh.Client, workspaceID string, fromTime time.Time) ([]activityIssue, []resolve.CachedRepo, error) {
 	// Get workspace repos
 	repos, err := fetchWorkspaceReposForActivity(client, workspaceID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(repos) == 0 {
-		return nil, nil
+		return nil, repos, nil
 	}
 
 	// Build GitHub search query: "repo:owner/name repo:owner/name2 updated:>YYYY-MM-DD"
@@ -647,7 +654,7 @@ func searchGitHubActivity(client *api.Client, ghClient *gh.Client, workspaceID s
 		if batchLen+len(part)+1 > 200 && len(batch) > 0 {
 			issues, err := runGitHubSearchBatch(ghClient, batch, dateStr)
 			if err != nil {
-				return nil, err
+				return nil, repos, err
 			}
 			allIssues = append(allIssues, issues...)
 			batch = batch[:0]
@@ -659,12 +666,12 @@ func searchGitHubActivity(client *api.Client, ghClient *gh.Client, workspaceID s
 	if len(batch) > 0 {
 		issues, err := runGitHubSearchBatch(ghClient, batch, dateStr)
 		if err != nil {
-			return nil, err
+			return nil, repos, err
 		}
 		allIssues = append(allIssues, issues...)
 	}
 
-	return allIssues, nil
+	return allIssues, repos, nil
 }
 
 func runGitHubSearchBatch(ghClient *gh.Client, repoParts []string, dateStr string) ([]activityIssue, error) {
@@ -744,7 +751,7 @@ func runGitHubSearchBatch(ghClient *gh.Client, repoParts []string, dateStr strin
 
 // fetchWorkspaceReposForActivity gets workspace repos from cache,
 // falling back to the API if the cache is empty.
-func fetchWorkspaceReposForActivity(client *api.Client, workspaceID string) ([]struct{ Name, OwnerName string }, error) {
+func fetchWorkspaceReposForActivity(client *api.Client, workspaceID string) ([]resolve.CachedRepo, error) {
 	key := resolve.RepoCacheKey(workspaceID)
 	repos, ok := cache.Get[[]resolve.CachedRepo](key)
 	if !ok {
@@ -754,12 +761,138 @@ func fetchWorkspaceReposForActivity(client *api.Client, workspaceID string) ([]s
 			return nil, err
 		}
 	}
+	return repos, nil
+}
 
-	result := make([]struct{ Name, OwnerName string }, len(repos))
-	for i, r := range repos {
-		result[i] = struct{ Name, OwnerName string }{r.Name, r.OwnerName}
+// activityIssueByInfoQuery fetches a single issue by repo+number, including its pipeline.
+const activityIssueByInfoQuery = `query ActivityIssueByInfo($repositoryGhId: Int!, $issueNumber: Int!, $workspaceId: ID!) {
+  issueByInfo(repositoryGhId: $repositoryGhId, issueNumber: $issueNumber) {
+    id
+    pipelineIssue(workspaceId: $workspaceId) {
+      pipeline { name }
+    }
+  }
+}`
+
+// activityDefaultPRPipelineQuery fetches pipelines to find the default PR pipeline.
+const activityDefaultPRPipelineQuery = `query ActivityDefaultPRPipeline($workspaceId: ID!) {
+  workspace(id: $workspaceId) {
+    pipelinesConnection(first: 50) {
+      nodes {
+        name
+        isDefaultPRPipeline
+      }
+    }
+  }
+}`
+
+// resolveGitHubIssuePipelines resolves pipeline names for GitHub-sourced activity items.
+// For each item it queries ZenHub's issueByInfo to get the real node ID and pipeline.
+// Items where pipelineIssue is null (e.g. PRs never moved) get the workspace's default
+// PR pipeline name. The issueMap is updated so the old synthetic ID is replaced.
+func resolveGitHubIssuePipelines(client *api.Client, workspaceID string, items []*activityIssue, repos []resolve.CachedRepo, issueMap map[string]*activityIssue) {
+	// Build repo GhID lookup by owner/name
+	repoGhIDs := make(map[string]int) // "owner/name" -> GhID
+	for _, r := range repos {
+		key := strings.ToLower(r.OwnerName + "/" + r.Name)
+		repoGhIDs[key] = r.GhID
 	}
-	return result, nil
+
+	// Lazy-fetch default PR pipeline name
+	var defaultPRPipeline string
+	var defaultPROnce sync.Once
+
+	fetchDefaultPRPipeline := func() string {
+		defaultPROnce.Do(func() {
+			data, err := client.Execute(activityDefaultPRPipelineQuery, map[string]any{
+				"workspaceId": workspaceID,
+			})
+			if err != nil {
+				return
+			}
+			var resp struct {
+				Workspace struct {
+					PipelinesConnection struct {
+						Nodes []struct {
+							Name                string `json:"name"`
+							IsDefaultPRPipeline bool   `json:"isDefaultPRPipeline"`
+						} `json:"nodes"`
+					} `json:"pipelinesConnection"`
+				} `json:"workspace"`
+			}
+			if err := json.Unmarshal(data, &resp); err != nil {
+				return
+			}
+			for _, p := range resp.Workspace.PipelinesConnection.Nodes {
+				if p.IsDefaultPRPipeline {
+					defaultPRPipeline = p.Name
+					return
+				}
+			}
+		})
+		return defaultPRPipeline
+	}
+
+	const concurrency = 5
+	sem := make(chan struct{}, concurrency)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, item := range items {
+		ghID, ok := repoGhIDs[strings.ToLower(item.RepoOwner+"/"+item.RepoName)]
+		if !ok {
+			continue
+		}
+
+		wg.Add(1)
+		go func(issue *activityIssue, repoGhID int) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			data, err := client.Execute(activityIssueByInfoQuery, map[string]any{
+				"repositoryGhId": repoGhID,
+				"issueNumber":    issue.Number,
+				"workspaceId":    workspaceID,
+			})
+			if err != nil {
+				return
+			}
+
+			var resp struct {
+				IssueByInfo *struct {
+					ID            string `json:"id"`
+					PipelineIssue *struct {
+						Pipeline struct {
+							Name string `json:"name"`
+						} `json:"pipeline"`
+					} `json:"pipelineIssue"`
+				} `json:"issueByInfo"`
+			}
+			if err := json.Unmarshal(data, &resp); err != nil || resp.IssueByInfo == nil {
+				return
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			oldID := issue.ID
+			issue.ID = resp.IssueByInfo.ID
+
+			if resp.IssueByInfo.PipelineIssue != nil {
+				issue.Pipeline = resp.IssueByInfo.PipelineIssue.Pipeline.Name
+			} else if name := fetchDefaultPRPipeline(); name != "" {
+				issue.Pipeline = name
+			}
+
+			// Update issueMap: remove old synthetic key, add real ID
+			if oldID != issue.ID {
+				delete(issueMap, oldID)
+				issueMap[issue.ID] = issue
+			}
+		}(item, ghID)
+	}
+	wg.Wait()
 }
 
 // fetchActivityTimelines fetches per-issue event timelines with bounded concurrency.

@@ -584,6 +584,36 @@ func TestActivityGitHubNoAccess(t *testing.T) {
 	}
 }
 
+func activityIssueByInfoResponse(id string, pipelineName string) map[string]any {
+	result := map[string]any{
+		"id": id,
+	}
+	if pipelineName != "" {
+		result["pipelineIssue"] = map[string]any{
+			"pipeline": map[string]any{"name": pipelineName},
+		}
+	} else {
+		result["pipelineIssue"] = nil
+	}
+	return map[string]any{
+		"data": map[string]any{
+			"issueByInfo": result,
+		},
+	}
+}
+
+func activityDefaultPRPipelineResponse(pipelines []map[string]any) map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"workspace": map[string]any{
+				"pipelinesConnection": map[string]any{
+					"nodes": pipelines,
+				},
+			},
+		},
+	}
+}
+
 func TestActivityWithGitHubSearch(t *testing.T) {
 	resetActivityFlags()
 
@@ -597,6 +627,9 @@ func TestActivityWithGitHubSearch(t *testing.T) {
 		makeActivityIssueNode("i1", 42, "ZenHub issue", "task-tracker", "dlakehammond", recent, "In Progress"),
 	}))
 	ms.HandleQuery("ActivityClosed", activityClosedResponse(nil))
+
+	// Pipeline resolution for GitHub-discovered issue
+	ms.HandleQuery("ActivityIssueByInfo", activityIssueByInfoResponse("zh-99", "Review"))
 
 	// GitHub search returns an additional issue
 	ghMs.HandleQuery("ActivityGitHubSearch", map[string]any{
@@ -639,6 +672,80 @@ func TestActivityWithGitHubSearch(t *testing.T) {
 	}
 	if !strings.Contains(out, "task-tracker#99") {
 		t.Errorf("output should contain GitHub-discovered issue, got: %s", out)
+	}
+	// GitHub-discovered issue should be resolved to "Review" pipeline, not "Unknown"
+	if strings.Contains(out, "Unknown") {
+		t.Errorf("output should not contain 'Unknown' pipeline — GitHub issues should be resolved, got: %s", out)
+	}
+	if !strings.Contains(out, "Review") {
+		t.Errorf("output should contain 'Review' pipeline for resolved GitHub issue, got: %s", out)
+	}
+}
+
+func TestActivityGitHubPipelineResolutionDefaultPR(t *testing.T) {
+	resetActivityFlags()
+
+	ms := testutil.NewMockServer(t)
+	ghMs := testutil.NewMockServer(t)
+
+	now := time.Now().UTC()
+	recent := now.Add(-2 * time.Hour).Format(time.RFC3339)
+
+	ms.HandleQuery("ActivitySearch", activityPipelineSearchResponse("", nil))
+	ms.HandleQuery("ActivityClosed", activityClosedResponse(nil))
+
+	// Issue has null pipelineIssue → falls back to default PR pipeline
+	ms.HandleQuery("ActivityIssueByInfo", activityIssueByInfoResponse("zh-pr-10", ""))
+	ms.HandleQuery("ActivityDefaultPRPipeline", activityDefaultPRPipelineResponse([]map[string]any{
+		{"name": "Backlog", "isDefaultPRPipeline": false},
+		{"name": "In Review", "isDefaultPRPipeline": true},
+		{"name": "Done", "isDefaultPRPipeline": false},
+	}))
+
+	ghMs.HandleQuery("ActivityGitHubSearch", map[string]any{
+		"data": map[string]any{
+			"search": map[string]any{
+				"issueCount": 1,
+				"pageInfo": map[string]any{
+					"hasNextPage": false,
+					"endCursor":   "",
+				},
+				"nodes": []any{
+					map[string]any{
+						"number":    10,
+						"title":     "Add feature X",
+						"updatedAt": recent,
+						"repository": map[string]any{
+							"name":  "task-tracker",
+							"owner": map[string]any{"login": "dlakehammond"},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	setupActivityTestEnvWithGitHub(t, ms, ghMs)
+	activityGitHub = true
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"activity", "--github"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("activity --github returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "task-tracker#10") {
+		t.Errorf("output should contain GitHub-discovered PR, got: %s", out)
+	}
+	// Should use default PR pipeline, not "Unknown"
+	if strings.Contains(out, "Unknown") {
+		t.Errorf("output should not contain 'Unknown' — null pipelineIssue should use default PR pipeline, got: %s", out)
+	}
+	if !strings.Contains(out, "In Review") {
+		t.Errorf("output should contain 'In Review' (default PR pipeline), got: %s", out)
 	}
 }
 

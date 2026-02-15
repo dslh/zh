@@ -342,14 +342,21 @@ func runActivity(cmd *cobra.Command, args []string) error {
 		if ghClient == nil {
 			fmt.Fprintln(cmd.ErrOrStderr(), output.Yellow("Warning: --github flag ignored — GitHub access not configured"))
 		} else {
-			ghIssues, err := searchGitHubActivity(ghClient, cfg.Workspace, fromTime)
+			ghIssues, err := searchGitHubActivity(client, ghClient, cfg.Workspace, fromTime)
 			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "%s\n", output.Yellow("Warning: GitHub search failed: "+err.Error()))
 			} else {
+				// Build a ref set from ZenHub results to dedup against GitHub results
+				// (ZenHub items have richer data: pipeline, assignees, etc.)
+				refSeen := make(map[string]bool)
+				for _, issue := range issueMap {
+					refSeen[issue.Ref] = true
+				}
 				for i := range ghIssues {
 					issue := &ghIssues[i]
-					if _, exists := issueMap[issue.ID]; !exists {
+					if !refSeen[issue.Ref] {
 						issueMap[issue.ID] = issue
+						refSeen[issue.Ref] = true
 					}
 				}
 			}
@@ -612,9 +619,9 @@ func scanClosedActivity(client *api.Client, workspaceID string, fromTime, toTime
 
 // searchGitHubActivity searches GitHub for recently updated issues/PRs
 // across all workspace repos.
-func searchGitHubActivity(ghClient *gh.Client, workspaceID string, fromTime time.Time) ([]activityIssue, error) {
+func searchGitHubActivity(client *api.Client, ghClient *gh.Client, workspaceID string, fromTime time.Time) ([]activityIssue, error) {
 	// Get workspace repos
-	repos, err := fetchWorkspaceReposForActivity(workspaceID)
+	repos, err := fetchWorkspaceReposForActivity(client, workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -661,85 +668,98 @@ func searchGitHubActivity(ghClient *gh.Client, workspaceID string, fromTime time
 }
 
 func runGitHubSearchBatch(ghClient *gh.Client, repoParts []string, dateStr string) ([]activityIssue, error) {
-	query := strings.Join(repoParts, " ") + " updated:>" + dateStr
+	repoClause := strings.Join(repoParts, " ")
 
+	// GitHub's search API requires an explicit is:issue or is:pr qualifier
+	// to return results; without one, repo-scoped searches return 0 hits.
+	// Run both searches and merge.
 	var allIssues []activityIssue
-	var cursor *string
+	for _, typeFilter := range []string{"is:issue", "is:pr"} {
+		query := repoClause + " " + typeFilter + " updated:>" + dateStr
+		var cursor *string
 
-	for {
-		vars := map[string]any{
-			"query": query,
-			"first": 100,
-		}
-		if cursor != nil {
-			vars["after"] = *cursor
-		}
-
-		data, err := ghClient.Execute(activityGitHubSearchQuery, vars)
-		if err != nil {
-			return nil, err
-		}
-
-		var resp struct {
-			Search struct {
-				IssueCount int `json:"issueCount"`
-				PageInfo   struct {
-					HasNextPage bool   `json:"hasNextPage"`
-					EndCursor   string `json:"endCursor"`
-				} `json:"pageInfo"`
-				Nodes []struct {
-					Number     int    `json:"number"`
-					Title      string `json:"title"`
-					UpdatedAt  string `json:"updatedAt"`
-					Repository struct {
-						Name  string `json:"name"`
-						Owner struct {
-							Login string `json:"login"`
-						} `json:"owner"`
-					} `json:"repository"`
-				} `json:"nodes"`
-			} `json:"search"`
-		}
-		if err := json.Unmarshal(data, &resp); err != nil {
-			return nil, fmt.Errorf("parsing GitHub search: %w", err)
-		}
-
-		for _, node := range resp.Search.Nodes {
-			if node.Number == 0 {
-				continue
+		for {
+			vars := map[string]any{
+				"query": query,
+				"first": 100,
 			}
-			updatedAt, _ := time.Parse(time.RFC3339, node.UpdatedAt)
-			allIssues = append(allIssues, activityIssue{
-				ID:        fmt.Sprintf("gh:%s/%s#%d", node.Repository.Owner.Login, node.Repository.Name, node.Number),
-				Number:    node.Number,
-				Title:     node.Title,
-				Ref:       fmt.Sprintf("%s#%d", node.Repository.Name, node.Number),
-				UpdatedAt: updatedAt,
-				RepoName:  node.Repository.Name,
-				RepoOwner: node.Repository.Owner.Login,
-			})
-		}
+			if cursor != nil {
+				vars["after"] = *cursor
+			}
 
-		if !resp.Search.PageInfo.HasNextPage {
-			break
+			data, err := ghClient.Execute(activityGitHubSearchQuery, vars)
+			if err != nil {
+				return nil, err
+			}
+
+			var resp struct {
+				Search struct {
+					IssueCount int `json:"issueCount"`
+					PageInfo   struct {
+						HasNextPage bool   `json:"hasNextPage"`
+						EndCursor   string `json:"endCursor"`
+					} `json:"pageInfo"`
+					Nodes []struct {
+						Number     int    `json:"number"`
+						Title      string `json:"title"`
+						UpdatedAt  string `json:"updatedAt"`
+						Repository struct {
+							Name  string `json:"name"`
+							Owner struct {
+								Login string `json:"login"`
+							} `json:"owner"`
+						} `json:"repository"`
+					} `json:"nodes"`
+				} `json:"search"`
+			}
+			if err := json.Unmarshal(data, &resp); err != nil {
+				return nil, fmt.Errorf("parsing GitHub search: %w", err)
+			}
+
+			for _, node := range resp.Search.Nodes {
+				if node.Number == 0 {
+					continue
+				}
+				updatedAt, _ := time.Parse(time.RFC3339, node.UpdatedAt)
+				allIssues = append(allIssues, activityIssue{
+					ID:        fmt.Sprintf("gh:%s/%s#%d", node.Repository.Owner.Login, node.Repository.Name, node.Number),
+					Number:    node.Number,
+					Title:     node.Title,
+					Ref:       fmt.Sprintf("%s#%d", node.Repository.Name, node.Number),
+					UpdatedAt: updatedAt,
+					RepoName:  node.Repository.Name,
+					RepoOwner: node.Repository.Owner.Login,
+				})
+			}
+
+			if !resp.Search.PageInfo.HasNextPage {
+				break
+			}
+			cursor = &resp.Search.PageInfo.EndCursor
 		}
-		cursor = &resp.Search.PageInfo.EndCursor
 	}
 
 	return allIssues, nil
 }
 
-// fetchWorkspaceReposForActivity gets workspace repos from cache.
-func fetchWorkspaceReposForActivity(workspaceID string) ([]struct{ Name, OwnerName string }, error) {
+// fetchWorkspaceReposForActivity gets workspace repos from cache,
+// falling back to the API if the cache is empty.
+func fetchWorkspaceReposForActivity(client *api.Client, workspaceID string) ([]struct{ Name, OwnerName string }, error) {
 	key := resolve.RepoCacheKey(workspaceID)
-	if repos, ok := cache.Get[[]resolve.CachedRepo](key); ok {
-		result := make([]struct{ Name, OwnerName string }, len(repos))
-		for i, r := range repos {
-			result[i] = struct{ Name, OwnerName string }{r.Name, r.OwnerName}
+	repos, ok := cache.Get[[]resolve.CachedRepo](key)
+	if !ok {
+		var err error
+		repos, err = resolve.FetchRepos(client, workspaceID)
+		if err != nil {
+			return nil, err
 		}
-		return result, nil
 	}
-	return nil, nil
+
+	result := make([]struct{ Name, OwnerName string }, len(repos))
+	for i, r := range repos {
+		result[i] = struct{ Name, OwnerName string }{r.Name, r.OwnerName}
+	}
+	return result, nil
 }
 
 // fetchActivityTimelines fetches per-issue event timelines with bounded concurrency.
@@ -758,24 +778,24 @@ func fetchActivityTimelines(client *api.Client, ghClient *gh.Client, includeGitH
 
 			issue := &(*issues)[idx]
 			var events []activityEvent
+			ghSourced := strings.HasPrefix(issue.ID, "gh:")
 
-			// Fetch ZenHub timeline
-			_, zhEvents, err := fetchZenHubTimelineByNode(client, issue.ID)
-			if err != nil {
-				return
-			}
-
-			// Filter events to time range
-			for _, ev := range zhEvents {
-				if !ev.Time.Before(fromTime) && !ev.Time.After(toTime) {
-					events = append(events, ev)
+			// Fetch ZenHub timeline (skip for GitHub-sourced items with synthetic IDs)
+			if !ghSourced {
+				_, zhEvents, err := fetchZenHubTimelineByNode(client, issue.ID)
+				if err == nil {
+					for _, ev := range zhEvents {
+						if !ev.Time.Before(fromTime) && !ev.Time.After(toTime) {
+							events = append(events, ev)
+						}
+					}
 				}
 			}
 
 			// Fetch GitHub timeline if requested
 			var isPR bool
 			var createdAt time.Time
-			if includeGitHub && ghClient != nil && issue.RepoOwner != "" {
+			if (includeGitHub || ghSourced) && ghClient != nil && issue.RepoOwner != "" {
 				ghResult, err := fetchGitHubTimeline(ghClient, issue.RepoOwner, issue.RepoName, issue.Number)
 				if err == nil {
 					isPR = ghResult.IsPR
@@ -790,7 +810,7 @@ func fetchActivityTimelines(client *api.Client, ghClient *gh.Client, includeGitH
 
 			// For PRs, fetch connected issues via ZenHub connections field
 			var connectedIssue string
-			if isPR {
+			if isPR && !ghSourced {
 				connectedIssue = fetchPRConnection(client, issue.ID)
 			}
 

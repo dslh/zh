@@ -411,10 +411,16 @@ func runActivity(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// Build canonical pipeline order from the workspace pipeline list
+	pipelineNameOrder := make([]string, len(pipelineIDs))
+	for i, p := range pipelineIDs {
+		pipelineNameOrder[i] = p.Name
+	}
+
 	if activityDetail {
-		renderActivityDetail(w, issues, fromTime, toTime, activityGitHub && ghClient != nil)
+		renderActivityDetail(w, issues, fromTime, toTime, activityGitHub && ghClient != nil, pipelineNameOrder)
 	} else {
-		renderActivitySummary(w, issues, fromTime, toTime)
+		renderActivitySummary(w, issues, fromTime, toTime, pipelineNameOrder)
 	}
 
 	return nil
@@ -1020,30 +1026,37 @@ func fetchPRConnection(client *api.Client, nodeID string) string {
 	return ""
 }
 
-// groupByPipeline groups issues by pipeline, returning ordered pipeline names
-// with "Closed" sorted to the end.
-func groupByPipeline(issues []activityIssue) (map[string][]activityIssue, []string) {
+// groupByPipeline groups issues by pipeline, returning pipeline names ordered
+// to match the canonical workspace pipeline order. Pipelines not in the
+// canonical list (e.g. "Closed", "Unknown") are appended at the end.
+func groupByPipeline(issues []activityIssue, canonicalOrder []string) (map[string][]activityIssue, []string) {
 	groups := make(map[string][]activityIssue)
-	var pipelineOrder []string
+	seen := make(map[string]bool)
 	for _, issue := range issues {
 		pipeline := issue.Pipeline
 		if pipeline == "" {
 			pipeline = "Unknown"
 		}
-		if _, exists := groups[pipeline]; !exists {
-			pipelineOrder = append(pipelineOrder, pipeline)
-		}
 		groups[pipeline] = append(groups[pipeline], issue)
+		seen[pipeline] = true
 	}
 
-	// Move "Closed" to the end
-	for i, p := range pipelineOrder {
-		if p == "Closed" && i < len(pipelineOrder)-1 {
-			pipelineOrder = append(pipelineOrder[:i], pipelineOrder[i+1:]...)
-			pipelineOrder = append(pipelineOrder, "Closed")
-			break
+	// Build ordered list: canonical pipelines first (preserving UI order),
+	// then any extras (Closed, Unknown, etc.) in the order encountered.
+	var pipelineOrder []string
+	for _, name := range canonicalOrder {
+		if seen[name] {
+			pipelineOrder = append(pipelineOrder, name)
+			delete(seen, name)
 		}
 	}
+	// Append remaining pipelines in stable order
+	var extras []string
+	for name := range seen {
+		extras = append(extras, name)
+	}
+	sort.Strings(extras)
+	pipelineOrder = append(pipelineOrder, extras...)
 
 	return groups, pipelineOrder
 }
@@ -1057,10 +1070,10 @@ func formatActivityRef(issue activityIssue) string {
 	return ref
 }
 
-func renderActivitySummary(w interface{ Write([]byte) (int, error) }, issues []activityIssue, fromTime, toTime time.Time) {
+func renderActivitySummary(w interface{ Write([]byte) (int, error) }, issues []activityIssue, fromTime, toTime time.Time, pipelineNameOrder []string) {
 	fmt.Fprintf(w, "Activity since %s\n\n", output.FormatDate(fromTime))
 
-	groups, pipelineOrder := groupByPipeline(issues)
+	groups, pipelineOrder := groupByPipeline(issues, pipelineNameOrder)
 
 	for i, pipeline := range pipelineOrder {
 		if i > 0 {
@@ -1091,10 +1104,10 @@ func renderActivitySummary(w interface{ Write([]byte) (int, error) }, issues []a
 	fmt.Fprintf(w, "\n%d issue(s) updated across %d pipeline(s)\n", len(issues), len(pipelineOrder))
 }
 
-func renderActivityDetail(w interface{ Write([]byte) (int, error) }, issues []activityIssue, fromTime, toTime time.Time, showSource bool) {
+func renderActivityDetail(w interface{ Write([]byte) (int, error) }, issues []activityIssue, fromTime, toTime time.Time, showSource bool, pipelineNameOrder []string) {
 	fmt.Fprintf(w, "Activity since %s\n", output.FormatDate(fromTime))
 
-	groups, pipelineOrder := groupByPipeline(issues)
+	groups, pipelineOrder := groupByPipeline(issues, pipelineNameOrder)
 
 	totalEvents := 0
 	first := true

@@ -515,9 +515,9 @@ func fetchGitHubTimeline(ghClient *gh.Client, owner, repo string, number int) (*
 		}
 
 		var timeline struct {
-			TypeName string `json:"__typename"`
+			TypeName  string `json:"__typename"`
 			CreatedAt string `json:"createdAt"`
-			Author   *struct {
+			Author    *struct {
 				Login string `json:"login"`
 			} `json:"author"`
 			UserContentEdits *struct {

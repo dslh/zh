@@ -934,11 +934,13 @@ func fetchActivityTimelines(client *api.Client, ghClient *gh.Client, includeGitH
 			// Fetch GitHub timeline if requested
 			var isPR bool
 			var createdAt time.Time
+			var createdBy string
 			if (includeGitHub || ghSourced) && ghClient != nil && issue.RepoOwner != "" {
 				ghResult, err := fetchGitHubTimeline(ghClient, issue.RepoOwner, issue.RepoName, issue.Number)
 				if err == nil {
 					isPR = ghResult.IsPR
 					createdAt = ghResult.CreatedAt
+					createdBy = ghResult.CreatedBy
 					for _, ev := range ghResult.Events {
 						if !ev.Time.Before(fromTime) && !ev.Time.After(toTime) {
 							events = append(events, ev)
@@ -963,6 +965,7 @@ func fetchActivityTimelines(client *api.Client, ghClient *gh.Client, includeGitH
 					Time:        createdAt,
 					Source:      "GitHub",
 					Description: desc,
+					Actor:       createdBy,
 				})
 			}
 
@@ -1061,13 +1064,12 @@ func groupByPipeline(issues []activityIssue, canonicalOrder []string) (map[strin
 	return groups, pipelineOrder
 }
 
-// formatActivityRef formats the issue reference with a PR indicator if applicable.
-func formatActivityRef(issue activityIssue) string {
-	ref := issue.Ref
+// formatActivityPrefix returns a dim "PR " prefix for pull requests, or empty string for issues.
+func formatActivityPrefix(issue activityIssue) string {
 	if issue.IsPR {
-		ref += " PR"
+		return output.Dim("PR ")
 	}
-	return ref
+	return ""
 }
 
 func renderActivitySummary(w interface{ Write([]byte) (int, error) }, issues []activityIssue, fromTime, toTime time.Time, pipelineNameOrder []string) {
@@ -1091,8 +1093,8 @@ func renderActivitySummary(w interface{ Write([]byte) (int, error) }, issues []a
 				assignee = "@" + strings.Join(issue.Assignees, ", @")
 			}
 			ago := formatTimeAgo(issue.UpdatedAt)
-			ref := formatActivityRef(issue)
-			line := fmt.Sprintf("  %s  %s", output.Cyan(fmt.Sprintf("%-24s", ref)), title)
+			prefix := formatActivityPrefix(issue)
+			line := fmt.Sprintf("  %s%s  %s", prefix, output.Cyan(fmt.Sprintf("%-24s", issue.Ref)), title)
 			if assignee != "" {
 				line += "  " + output.Dim(assignee)
 			}
@@ -1120,8 +1122,8 @@ func renderActivityDetail(w interface{ Write([]byte) (int, error) }, issues []ac
 		fmt.Fprintf(w, "\n%s\n", output.Bold(pipeline))
 
 		for _, issue := range pipelineIssues {
-			ref := formatActivityRef(issue)
-			header := fmt.Sprintf("\n%s: %s", output.Cyan(ref), issue.Title)
+			prefix := formatActivityPrefix(issue)
+			header := fmt.Sprintf("\n%s%s: %s", prefix, output.Cyan(issue.Ref), issue.Title)
 			if issue.ConnectedIssue != "" {
 				header += "  " + output.Dim("→ "+issue.ConnectedIssue)
 			}

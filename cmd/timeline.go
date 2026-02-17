@@ -67,6 +67,7 @@ const githubIssueTimelineQuery = `query GetGitHubTimeline($owner: String!, $repo
       ... on Issue {
         __typename
         createdAt
+        author { login }
         userContentEdits(first: 1) { nodes { createdAt editor { login } } }
         timelineItems(first: $first, after: $after) {
           totalCount
@@ -100,6 +101,7 @@ const githubIssueTimelineQuery = `query GetGitHubTimeline($owner: String!, $repo
       ... on PullRequest {
         __typename
         createdAt
+        author { login }
         userContentEdits(first: 1) { nodes { createdAt editor { login } } }
         timelineItems(first: $first, after: $after) {
           totalCount
@@ -230,6 +232,7 @@ func parseZenHubTimelineItem(item timelineItemNode) *activityEvent {
 	if err != nil {
 		return nil
 	}
+	t = t.Local()
 
 	var data map[string]any
 	if item.Data != nil {
@@ -474,6 +477,7 @@ type ghTimelineResult struct {
 	Events    []activityEvent
 	IsPR      bool
 	CreatedAt time.Time
+	CreatedBy string
 }
 
 // fetchGitHubTimeline fetches timeline events from the GitHub API.
@@ -511,8 +515,11 @@ func fetchGitHubTimeline(ghClient *gh.Client, owner, repo string, number int) (*
 		}
 
 		var timeline struct {
-			TypeName         string `json:"__typename"`
-			CreatedAt        string `json:"createdAt"`
+			TypeName string `json:"__typename"`
+			CreatedAt string `json:"createdAt"`
+			Author   *struct {
+				Login string `json:"login"`
+			} `json:"author"`
 			UserContentEdits *struct {
 				Nodes []struct {
 					CreatedAt string `json:"createdAt"`
@@ -537,7 +544,12 @@ func fetchGitHubTimeline(ghClient *gh.Client, owner, repo string, number int) (*
 		// On first page, extract metadata and description edits
 		if cursor == nil {
 			result.IsPR = timeline.TypeName == "PullRequest"
-			result.CreatedAt, _ = time.Parse(time.RFC3339, timeline.CreatedAt)
+			if t, err := time.Parse(time.RFC3339, timeline.CreatedAt); err == nil {
+				result.CreatedAt = t.Local()
+			}
+			if timeline.Author != nil {
+				result.CreatedBy = timeline.Author.Login
+			}
 
 			if timeline.UserContentEdits != nil {
 				for _, edit := range timeline.UserContentEdits.Nodes {
@@ -545,6 +557,7 @@ func fetchGitHubTimeline(ghClient *gh.Client, owner, repo string, number int) (*
 					if err != nil {
 						continue
 					}
+					t = t.Local()
 					actor := ""
 					if edit.Editor != nil {
 						actor = edit.Editor.Login
@@ -613,6 +626,7 @@ func parseGitHubTimelineItem(raw json.RawMessage) *activityEvent {
 	if err != nil {
 		return nil
 	}
+	t = t.Local()
 
 	actor := ""
 	if base.Actor != nil {

@@ -19,19 +19,31 @@ import (
 
 // activityIssue holds an issue found during the activity scan.
 type activityIssue struct {
-	ID             string          `json:"id"`
-	Number         int             `json:"number"`
-	Title          string          `json:"title"`
-	Ref            string          `json:"ref"`
-	Pipeline       string          `json:"pipeline"`
-	UpdatedAt      time.Time       `json:"updatedAt"`
-	GhUpdatedAt    time.Time       `json:"ghUpdatedAt,omitempty"`
-	Assignees      []string        `json:"assignees,omitempty"`
-	RepoName       string          `json:"repoName"`
-	RepoOwner      string          `json:"repoOwner"`
-	IsPR           bool            `json:"isPR,omitempty"`
-	ConnectedIssue string          `json:"connectedIssue,omitempty"`
-	Events         []activityEvent `json:"events,omitempty"`
+	ID                  string           `json:"id"`
+	Number              int              `json:"number"`
+	Title               string           `json:"title"`
+	Ref                 string           `json:"ref"`
+	Pipeline            string           `json:"pipeline"`
+	UpdatedAt           time.Time        `json:"updatedAt"`
+	GhUpdatedAt         time.Time        `json:"ghUpdatedAt,omitempty"`
+	Assignees           []string         `json:"assignees,omitempty"`
+	RepoName            string           `json:"repoName"`
+	RepoOwner           string           `json:"repoOwner"`
+	IsPR                bool             `json:"isPR,omitempty"`
+	ConnectedIssue      string           `json:"connectedIssue,omitempty"`
+	connectedIssueTitle string           // transient: title of connected issue (for placeholder creation)
+	Events              []activityEvent  `json:"events,omitempty"`
+	ConnectedPRRefs     []connectedPRRef `json:"-"`
+	ConnectedPRs        []activityIssue  `json:"connectedPRs,omitempty"`
+}
+
+// connectedPRRef holds transient data about a PR connected to an issue.
+type connectedPRRef struct {
+	Number    int
+	Title     string
+	RepoName  string
+	RepoOwner string
+	Ref       string
 }
 
 // GraphQL query for scanning pipeline issues ordered by updated_at
@@ -68,6 +80,7 @@ const activitySearchQuery = `query ActivitySearch(
       assignees(first: 5) {
         nodes { login }
       }
+      pullRequest
       pipelineIssue(workspaceId: $workspaceId) {
         pipeline { name }
       }
@@ -96,6 +109,7 @@ const activityClosedQuery = `query ActivityClosed(
         name
         ownerName
       }
+      pullRequest
       assignees(first: 5) {
         nodes { login }
       }
@@ -387,6 +401,7 @@ func runActivity(cmd *cobra.Command, args []string) error {
 	// Step 3: Detail mode — fetch per-issue timelines
 	if activityDetail && len(issues) > 0 {
 		fetchActivityTimelines(client, ghClient, activityGitHub, &issues, fromTime, toTime)
+		nestConnectedPRs(&issues)
 	}
 
 	w := cmd.OutOrStdout()
@@ -471,6 +486,7 @@ func scanPipelineActivity(client *api.Client, workspaceID, pipelineID, pipelineN
 							Login string `json:"login"`
 						} `json:"nodes"`
 					} `json:"assignees"`
+					PullRequest   bool `json:"pullRequest"`
 					PipelineIssue *struct {
 						Pipeline struct {
 							Name string `json:"name"`
@@ -537,6 +553,7 @@ func scanPipelineActivity(client *api.Client, workspaceID, pipelineID, pipelineN
 				Assignees:   assignees,
 				RepoName:    node.Repository.Name,
 				RepoOwner:   node.Repository.OwnerName,
+				IsPR:        node.PullRequest,
 			})
 		}
 
@@ -580,6 +597,7 @@ func scanClosedActivity(client *api.Client, workspaceID string, fromTime, toTime
 						Login string `json:"login"`
 					} `json:"nodes"`
 				} `json:"assignees"`
+				PullRequest bool `json:"pullRequest"`
 			} `json:"nodes"`
 		} `json:"searchClosedIssues"`
 	}
@@ -624,6 +642,7 @@ func scanClosedActivity(client *api.Client, workspaceID string, fromTime, toTime
 			Assignees:   assignees,
 			RepoName:    node.Repository.Name,
 			RepoOwner:   node.Repository.OwnerName,
+			IsPR:        node.PullRequest,
 		})
 	}
 
@@ -742,6 +761,7 @@ func runGitHubSearchBatch(ghClient *gh.Client, repoParts []string, dateStr strin
 					UpdatedAt: updatedAt,
 					RepoName:  node.Repository.Name,
 					RepoOwner: node.Repository.Owner.Login,
+					IsPR:      typeFilter == "is:pr",
 				})
 			}
 
@@ -950,15 +970,21 @@ func fetchActivityTimelines(client *api.Client, ghClient *gh.Client, includeGitH
 			}
 
 			// For PRs, fetch connected issues via ZenHub connections field
-			var connectedIssue string
-			if isPR && !ghSourced {
-				connectedIssue = fetchPRConnection(client, issue.ID)
+			var connInfo connectedIssueInfo
+			if (isPR || issue.IsPR) && !ghSourced {
+				connInfo = fetchPRConnection(client, issue.ID)
+			}
+
+			// For non-PR issues, fetch connected PRs
+			var prRefs []connectedPRRef
+			if !isPR && !issue.IsPR && !ghSourced {
+				prRefs = fetchIssueConnectedPRs(client, issue.ID)
 			}
 
 			// Synthesize "created" event if creation is within the time range
 			if !createdAt.IsZero() && !createdAt.Before(fromTime) && !createdAt.After(toTime) {
 				desc := "created this issue"
-				if isPR {
+				if isPR || issue.IsPR {
 					desc = "opened this pull request"
 				}
 				events = append(events, activityEvent{
@@ -976,12 +1002,111 @@ func fetchActivityTimelines(client *api.Client, ghClient *gh.Client, includeGitH
 
 			mu.Lock()
 			issue.Events = events
-			issue.IsPR = isPR
-			issue.ConnectedIssue = connectedIssue
+			issue.IsPR = isPR || issue.IsPR
+			issue.ConnectedIssue = connInfo.Ref
+			issue.connectedIssueTitle = connInfo.Title
+			issue.ConnectedPRRefs = prRefs
 			mu.Unlock()
 		}(i)
 	}
 	wg.Wait()
+}
+
+// nestConnectedPRs groups PRs under their connected parent issues.
+// PRs with a ConnectedIssue matching a parent in the list are nested.
+// Issues with ConnectedPRRefs pull matching PRs underneath them.
+// Unmatched connections create placeholder entries.
+func nestConnectedPRs(issues *[]activityIssue) {
+	list := *issues
+
+	// Build ref → index map
+	refMap := make(map[string]int, len(list))
+	for i, item := range list {
+		refMap[item.Ref] = i
+	}
+
+	// Track which PRs get nested (by index)
+	nested := make(map[int]bool)
+	// Track parent index → list of PRs to nest
+	parentPRs := make(map[int][]activityIssue)
+
+	// Pass 1: PRs with ConnectedIssue → nest under parent
+	for i, item := range list {
+		if !item.IsPR || item.ConnectedIssue == "" {
+			continue
+		}
+		if parentIdx, ok := refMap[item.ConnectedIssue]; ok {
+			nested[i] = true
+			pr := list[i]
+			pr.Pipeline = list[parentIdx].Pipeline
+			parentPRs[parentIdx] = append(parentPRs[parentIdx], pr)
+		}
+	}
+
+	// Pass 2: Issues with ConnectedPRRefs → pull matching PRs under
+	for i, item := range list {
+		if item.IsPR {
+			continue
+		}
+		for _, prRef := range item.ConnectedPRRefs {
+			if prIdx, ok := refMap[prRef.Ref]; ok && list[prIdx].IsPR && !nested[prIdx] {
+				nested[prIdx] = true
+				pr := list[prIdx]
+				pr.Pipeline = item.Pipeline
+				parentPRs[i] = append(parentPRs[i], pr)
+			} else if !ok {
+				// Placeholder PR (not in activity results)
+				parentPRs[i] = append(parentPRs[i], activityIssue{
+					Number:   prRef.Number,
+					Title:    prRef.Title,
+					Ref:      prRef.Ref,
+					Pipeline: item.Pipeline,
+					RepoName: prRef.RepoName,
+					IsPR:     true,
+				})
+			}
+		}
+	}
+
+	// Pass 3: PRs with ConnectedIssue not in refMap → create placeholder parent
+	var placeholders []activityIssue
+	for i, item := range list {
+		if !item.IsPR || item.ConnectedIssue == "" || nested[i] {
+			continue
+		}
+		if _, ok := refMap[item.ConnectedIssue]; ok {
+			continue // already handled
+		}
+		// Create placeholder parent issue
+		nested[i] = true
+		pr := list[i]
+		placeholder := activityIssue{
+			Ref:          item.ConnectedIssue,
+			Title:        item.connectedIssueTitle,
+			Pipeline:     item.Pipeline,
+			ConnectedPRs: []activityIssue{pr},
+		}
+		placeholders = append(placeholders, placeholder)
+	}
+
+	// Apply nested PRs to parents, sorted by Ref
+	for parentIdx, prs := range parentPRs {
+		sort.Slice(prs, func(i, j int) bool { return prs[i].Ref < prs[j].Ref })
+		list[parentIdx].ConnectedPRs = prs
+	}
+
+	// Remove nested PRs from flat list
+	var result []activityIssue
+	for i, item := range list {
+		if !nested[i] {
+			result = append(result, item)
+		}
+	}
+
+	// Append placeholder parents
+	result = append(result, placeholders...)
+
+	*issues = result
 }
 
 // Rendering functions
@@ -992,6 +1117,7 @@ const prConnectionQuery = `query PRConnections($id: ID!) {
       connections(first: 1) {
         nodes {
           number
+          title
           repository { name }
         }
       }
@@ -999,17 +1125,24 @@ const prConnectionQuery = `query PRConnections($id: ID!) {
   }
 }`
 
+// connectedIssueInfo holds the ref and title of a connected issue.
+type connectedIssueInfo struct {
+	Ref   string
+	Title string
+}
+
 // fetchPRConnection fetches the connected issue for a PR via ZenHub's connections field.
-func fetchPRConnection(client *api.Client, nodeID string) string {
+func fetchPRConnection(client *api.Client, nodeID string) connectedIssueInfo {
 	data, err := client.Execute(prConnectionQuery, map[string]any{"id": nodeID})
 	if err != nil {
-		return ""
+		return connectedIssueInfo{}
 	}
 	var resp struct {
 		Node *struct {
 			Connections struct {
 				Nodes []struct {
-					Number     int `json:"number"`
+					Number     int    `json:"number"`
+					Title      string `json:"title"`
 					Repository struct {
 						Name string `json:"name"`
 					} `json:"repository"`
@@ -1018,15 +1151,71 @@ func fetchPRConnection(client *api.Client, nodeID string) string {
 		} `json:"node"`
 	}
 	if err := json.Unmarshal(data, &resp); err != nil || resp.Node == nil {
-		return ""
+		return connectedIssueInfo{}
 	}
 	if len(resp.Node.Connections.Nodes) > 0 {
 		conn := resp.Node.Connections.Nodes[0]
 		if conn.Repository.Name != "" && conn.Number > 0 {
-			return fmt.Sprintf("%s#%d", conn.Repository.Name, conn.Number)
+			return connectedIssueInfo{
+				Ref:   fmt.Sprintf("%s#%d", conn.Repository.Name, conn.Number),
+				Title: conn.Title,
+			}
 		}
 	}
-	return ""
+	return connectedIssueInfo{}
+}
+
+// issueConnectedPRsQuery fetches PRs connected to an issue.
+const issueConnectedPRsQuery = `query IssueConnectedPRs($id: ID!) {
+  node(id: $id) {
+    ... on Issue {
+      connectedPrs(first: 10) {
+        nodes {
+          number
+          title
+          repository { name ownerName }
+        }
+      }
+    }
+  }
+}`
+
+// fetchIssueConnectedPRs fetches PR references connected to a non-PR issue.
+func fetchIssueConnectedPRs(client *api.Client, nodeID string) []connectedPRRef {
+	data, err := client.Execute(issueConnectedPRsQuery, map[string]any{"id": nodeID})
+	if err != nil {
+		return nil
+	}
+	var resp struct {
+		Node *struct {
+			ConnectedPrs struct {
+				Nodes []struct {
+					Number     int    `json:"number"`
+					Title      string `json:"title"`
+					Repository struct {
+						Name      string `json:"name"`
+						OwnerName string `json:"ownerName"`
+					} `json:"repository"`
+				} `json:"nodes"`
+			} `json:"connectedPrs"`
+		} `json:"node"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil || resp.Node == nil {
+		return nil
+	}
+	var refs []connectedPRRef
+	for _, node := range resp.Node.ConnectedPrs.Nodes {
+		if node.Number > 0 && node.Repository.Name != "" {
+			refs = append(refs, connectedPRRef{
+				Number:    node.Number,
+				Title:     node.Title,
+				RepoName:  node.Repository.Name,
+				RepoOwner: node.Repository.OwnerName,
+				Ref:       fmt.Sprintf("%s#%d", node.Repository.Name, node.Number),
+			})
+		}
+	}
+	return refs
 }
 
 // groupByPipeline groups issues by pipeline, returning pipeline names ordered
@@ -1112,6 +1301,7 @@ func renderActivityDetail(w interface{ Write([]byte) (int, error) }, issues []ac
 	groups, pipelineOrder := groupByPipeline(issues, pipelineNameOrder)
 
 	totalEvents := 0
+	connectedPRCount := 0
 	first := true
 	for _, pipeline := range pipelineOrder {
 		if !first {
@@ -1124,33 +1314,56 @@ func renderActivityDetail(w interface{ Write([]byte) (int, error) }, issues []ac
 		for _, issue := range pipelineIssues {
 			prefix := formatActivityPrefix(issue)
 			header := fmt.Sprintf("\n%s%s: %s", prefix, output.Cyan(issue.Ref), issue.Title)
-			if issue.ConnectedIssue != "" {
-				header += "  " + output.Dim("→ "+issue.ConnectedIssue)
-			}
 			fmt.Fprintln(w, header)
 
 			if len(issue.Events) == 0 {
 				fmt.Fprintln(w, output.Dim("  (no events in time range)"))
-				continue
+			} else {
+				for _, ev := range issue.Events {
+					dateStr := ev.Time.Format("Jan 2 15:04")
+					actor := ""
+					if ev.Actor != "" {
+						actor = "@" + ev.Actor + " "
+					}
+					line := fmt.Sprintf("  %s  %s%s", output.Dim(dateStr), actor, ev.Description)
+					if showSource {
+						line += "  " + output.Dim("["+ev.Source+"]")
+					}
+					fmt.Fprintln(w, line)
+					totalEvents++
+				}
 			}
 
-			for _, ev := range issue.Events {
-				dateStr := ev.Time.Format("Jan 2 15:04")
-				actor := ""
-				if ev.Actor != "" {
-					actor = "@" + ev.Actor + " "
+			// Render nested connected PRs
+			for _, pr := range issue.ConnectedPRs {
+				connectedPRCount++
+				fmt.Fprintf(w, "  %s %s: %s\n", output.Dim("└─"), output.Cyan(pr.Ref), pr.Title)
+				if len(pr.Events) == 0 {
+					fmt.Fprintln(w, output.Dim("     (no events)"))
+				} else {
+					for _, ev := range pr.Events {
+						dateStr := ev.Time.Format("Jan 2 15:04")
+						actor := ""
+						if ev.Actor != "" {
+							actor = "@" + ev.Actor + " "
+						}
+						line := fmt.Sprintf("     %s  %s%s", output.Dim(dateStr), actor, ev.Description)
+						if showSource {
+							line += "  " + output.Dim("["+ev.Source+"]")
+						}
+						fmt.Fprintln(w, line)
+						totalEvents++
+					}
 				}
-				line := fmt.Sprintf("  %s  %s%s", output.Dim(dateStr), actor, ev.Description)
-				if showSource {
-					line += "  " + output.Dim("["+ev.Source+"]")
-				}
-				fmt.Fprintln(w, line)
-				totalEvents++
 			}
 		}
 	}
 
-	fmt.Fprintf(w, "\n%d issue(s), %d event(s) across %d pipeline(s)\n", len(issues), totalEvents, countPipelines(issues))
+	summary := fmt.Sprintf("\n%d issue(s), %d event(s) across %d pipeline(s)", len(issues), totalEvents, countPipelines(issues))
+	if connectedPRCount > 0 {
+		summary += fmt.Sprintf(", %d connected PR(s)", connectedPRCount)
+	}
+	fmt.Fprintln(w, summary)
 }
 
 // formatTimeAgo formats a time as a human-readable relative duration.

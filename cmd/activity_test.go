@@ -205,6 +205,7 @@ func makeActivityIssueNode(id string, number int, title, repo, owner, updatedAt,
 		"state":       "OPEN",
 		"updatedAt":   updatedAt,
 		"ghUpdatedAt": "",
+		"pullRequest": false,
 		"repository": map[string]any{
 			"name":      repo,
 			"ownerName": owner,
@@ -220,6 +221,12 @@ func makeActivityIssueNode(id string, number int, title, repo, owner, updatedAt,
 			"pipeline": map[string]any{"name": pipeline},
 		}
 	}
+	return node
+}
+
+func makeActivityPRNode(id string, number int, title, repo, owner, updatedAt, pipeline string) map[string]any {
+	node := makeActivityIssueNode(id, number, title, repo, owner, updatedAt, pipeline)
+	node["pullRequest"] = true
 	return node
 }
 
@@ -531,6 +538,16 @@ func TestActivityWithDetail(t *testing.T) {
 			},
 		},
 	})
+	// Connected PRs response (empty — no connected PRs for this issue)
+	ms.HandleQuery("IssueConnectedPRs", map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"connectedPrs": map[string]any{
+					"nodes": []any{},
+				},
+			},
+		},
+	})
 	setupActivityTestEnv(t, ms)
 
 	buf := new(bytes.Buffer)
@@ -820,6 +837,207 @@ func TestFormatTimeAgo(t *testing.T) {
 		if result != tt.contains {
 			t.Errorf("formatTimeAgo(%v) = %q, want %q", time.Since(tt.t), result, tt.contains)
 		}
+	}
+}
+
+func TestActivityDetailNestedPR(t *testing.T) {
+	resetActivityFlags()
+
+	ms := testutil.NewMockServer(t)
+
+	now := time.Now().UTC()
+	recent := now.Add(-2 * time.Hour).Format(time.RFC3339)
+
+	// Issue and connected PR in same pipeline
+	ms.HandleQuery("ActivitySearch", activityPipelineSearchResponse("In Progress", []map[string]any{
+		makeActivityIssueNode("i1", 42, "Fix login page", "task-tracker", "dlakehammond", recent, "In Progress"),
+		makeActivityPRNode("pr1", 100, "Fix login CSS", "task-tracker", "dlakehammond", recent, "In Progress"),
+	}))
+	ms.HandleQuery("ActivityClosed", activityClosedResponse(nil))
+
+	// Timeline for issue
+	ms.HandleQuery("GetIssueTimelineByNode", map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"__typename": "Issue",
+				"id":         "i1",
+				"number":     42,
+				"title":      "Fix login page",
+				"repository": map[string]any{
+					"name":  "task-tracker",
+					"owner": map[string]any{"login": "dlakehammond"},
+				},
+				"timelineItems": map[string]any{
+					"totalCount": 0,
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
+					},
+					"nodes": []any{},
+				},
+			},
+		},
+	})
+
+	// PR connection: PR pr1 → issue task-tracker#42
+	ms.HandleQuery("PRConnections", map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"connections": map[string]any{
+					"nodes": []any{
+						map[string]any{
+							"number":     42,
+							"title":      "Fix login page",
+							"repository": map[string]any{"name": "task-tracker"},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	// Connected PRs for the issue: returns the PR
+	ms.HandleQuery("IssueConnectedPRs", map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"connectedPrs": map[string]any{
+					"nodes": []any{
+						map[string]any{
+							"number": 100,
+							"title":  "Fix login CSS",
+							"repository": map[string]any{
+								"name":      "task-tracker",
+								"ownerName": "dlakehammond",
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	setupActivityTestEnv(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"activity", "--detail"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("activity --detail returned error: %v", err)
+	}
+
+	out := buf.String()
+
+	// Issue should appear
+	if !strings.Contains(out, "task-tracker#42") {
+		t.Errorf("output should contain parent issue ref, got: %s", out)
+	}
+
+	// PR should be nested with └─, not standalone
+	if !strings.Contains(out, "└─") {
+		t.Errorf("output should contain tree indicator for nested PR, got: %s", out)
+	}
+
+	// Nested PR should NOT have "PR " prefix
+	lines := strings.Split(out, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "task-tracker#100") && strings.Contains(line, "PR ") {
+			t.Errorf("nested PR should not have 'PR ' prefix, got line: %s", line)
+		}
+	}
+
+	// Should not contain → arrow for connected issue
+	if strings.Contains(out, "→") {
+		t.Errorf("output should not contain → arrow (replaced by nesting), got: %s", out)
+	}
+
+	// Should mention connected PRs in summary
+	if !strings.Contains(out, "connected PR") {
+		t.Errorf("summary should mention connected PRs, got: %s", out)
+	}
+}
+
+func TestActivityDetailStandalonePR(t *testing.T) {
+	resetActivityFlags()
+
+	ms := testutil.NewMockServer(t)
+
+	now := time.Now().UTC()
+	recent := now.Add(-2 * time.Hour).Format(time.RFC3339)
+
+	// PR without a connected issue
+	ms.HandleQuery("ActivitySearch", activityPipelineSearchResponse("In Progress", []map[string]any{
+		makeActivityPRNode("pr1", 200, "Standalone PR", "task-tracker", "dlakehammond", recent, "In Progress"),
+	}))
+	ms.HandleQuery("ActivityClosed", activityClosedResponse(nil))
+
+	// Timeline for PR
+	ms.HandleQuery("GetIssueTimelineByNode", map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"__typename": "Issue",
+				"id":         "pr1",
+				"number":     200,
+				"title":      "Standalone PR",
+				"repository": map[string]any{
+					"name":  "task-tracker",
+					"owner": map[string]any{"login": "dlakehammond"},
+				},
+				"timelineItems": map[string]any{
+					"totalCount": 0,
+					"pageInfo": map[string]any{
+						"hasNextPage": false,
+						"endCursor":   "",
+					},
+					"nodes": []any{},
+				},
+			},
+		},
+	})
+
+	// PR connection: no connected issue
+	ms.HandleQuery("PRConnections", map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"connections": map[string]any{
+					"nodes": []any{},
+				},
+			},
+		},
+	})
+
+	setupActivityTestEnv(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"activity", "--detail"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("activity --detail returned error: %v", err)
+	}
+
+	out := buf.String()
+
+	// PR should appear with "PR " prefix since it's standalone
+	if !strings.Contains(out, "task-tracker#200") {
+		t.Errorf("output should contain standalone PR ref, got: %s", out)
+	}
+
+	// Check that it has the "PR " prefix (standalone, not nested)
+	foundPRPrefix := false
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "task-tracker#200") && strings.Contains(line, "PR ") {
+			foundPRPrefix = true
+			break
+		}
+	}
+	if !foundPRPrefix {
+		t.Errorf("standalone PR should have 'PR ' prefix, got: %s", out)
+	}
+
+	// Should not contain └─ since there's no nesting
+	if strings.Contains(out, "└─") {
+		t.Errorf("standalone PR should not have tree indicator, got: %s", out)
 	}
 }
 

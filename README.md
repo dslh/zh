@@ -55,6 +55,19 @@ zh board                        # View the full board
 zh board --pipeline="In Dev"    # Filter to one pipeline
 ```
 
+### Activity
+
+```sh
+zh activity                          # Recent activity (last 24 hours)
+zh activity --from=7d               # Last 7 days
+zh activity --from=yesterday        # Since yesterday
+zh activity --from=2026-02-01       # Since a specific date
+zh activity --pipeline="In Dev"     # Filter to one pipeline
+zh activity --repo=mpt              # Filter to one repo
+zh activity --github                # Include GitHub-only activity
+zh activity --detail                # Per-issue event timelines
+```
+
 ### Issues
 
 ```sh
@@ -227,7 +240,7 @@ Some features require GitHub API access, configured during setup as either `gh` 
 Without GitHub access configured, the following are affected:
 
 - `zh epic edit`, `set-state`, `add`, `remove` will not work for legacy epics (those backed by a GitHub issue)
-- `zh issue activity --github` will be ignored
+- `zh activity --github` and `zh issue activity --github` will be ignored
 - `zh issue show` for PRs will not include review/merge/CI status
 - Branch name resolution via `--repo` will not work
 

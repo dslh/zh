@@ -55,6 +55,70 @@ func TestIssueActivityWithEvents(t *testing.T) {
 	}
 }
 
+func TestIssueActivityFromFlag(t *testing.T) {
+	resetIssueFlags()
+	resetIssueActivityFlags()
+
+	ms := setupIssueActivityServer(t, true)
+	setupIssueTestEnv(t, ms)
+
+	// Events: t3=2026-02-07, t1=2026-02-10, t2=2026-02-10
+	// --from=2026-02-09 should exclude the Feb 7 PR connect event
+	issueActivityFrom = "2026-02-09"
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"issue", "activity", "task-tracker#1", "--from=2026-02-09"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("issue activity --from returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "set estimate to 5.0") {
+		t.Errorf("output should contain estimate event (Feb 10), got: %s", out)
+	}
+	if !strings.Contains(out, "set priority") {
+		t.Errorf("output should contain priority event (Feb 10), got: %s", out)
+	}
+	if strings.Contains(out, "connected PR") {
+		t.Errorf("output should NOT contain PR connect event (Feb 7), got: %s", out)
+	}
+	if !strings.Contains(out, "Total: 2 event(s)") {
+		t.Errorf("expected 2 events after filtering, got: %s", out)
+	}
+}
+
+func TestIssueActivityToFlag(t *testing.T) {
+	resetIssueFlags()
+	resetIssueActivityFlags()
+
+	ms := setupIssueActivityServer(t, true)
+	setupIssueTestEnv(t, ms)
+
+	// --to=2026-02-08 should only include the Feb 7 PR connect event
+	issueActivityTo = "2026-02-08"
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"issue", "activity", "task-tracker#1", "--to=2026-02-08"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("issue activity --to returned error: %v", err)
+	}
+
+	out := buf.String()
+	if strings.Contains(out, "set estimate") {
+		t.Errorf("output should NOT contain estimate event (Feb 10), got: %s", out)
+	}
+	if !strings.Contains(out, "connected PR") {
+		t.Errorf("output should contain PR connect event (Feb 7), got: %s", out)
+	}
+	if !strings.Contains(out, "Total: 1 event(s)") {
+		t.Errorf("expected 1 event after filtering, got: %s", out)
+	}
+}
+
 func TestIssueActivityNoEvents(t *testing.T) {
 	resetIssueFlags()
 	resetIssueActivityFlags()
@@ -205,6 +269,12 @@ func TestIssueActivityHelp(t *testing.T) {
 	}
 	if !strings.Contains(out, "--repo") {
 		t.Error("help should mention --repo flag")
+	}
+	if !strings.Contains(out, "--from") {
+		t.Error("help should mention --from flag")
+	}
+	if !strings.Contains(out, "--to") {
+		t.Error("help should mention --to flag")
 	}
 }
 

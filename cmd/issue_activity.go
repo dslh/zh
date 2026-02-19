@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/dslh/zh/internal/api"
 	"github.com/dslh/zh/internal/exitcode"
@@ -53,7 +54,9 @@ comments, close/reopen). This requires GitHub access to be configured.
 Examples:
   zh issue activity task-tracker#1
   zh issue activity --repo=task-tracker 1
-  zh issue activity task-tracker#1 --github`,
+  zh issue activity task-tracker#1 --github
+  zh issue activity task-tracker#1 --from=7d
+  zh issue activity task-tracker#1 --from=2026-01-01 --to=2026-02-01`,
 	Args: cobra.ExactArgs(1),
 	RunE: runIssueActivity,
 }
@@ -61,11 +64,15 @@ Examples:
 var (
 	issueActivityRepo   string
 	issueActivityGitHub bool
+	issueActivityFrom   string
+	issueActivityTo     string
 )
 
 func init() {
 	issueActivityCmd.Flags().StringVar(&issueActivityRepo, "repo", "", "Repository context for bare issue numbers")
 	issueActivityCmd.Flags().BoolVar(&issueActivityGitHub, "github", false, "Include GitHub timeline events (requires GitHub access)")
+	issueActivityCmd.Flags().StringVar(&issueActivityFrom, "from", "", "Start of time range (e.g. 1d, 7d, 2h, yesterday, 2026-02-01)")
+	issueActivityCmd.Flags().StringVar(&issueActivityTo, "to", "", "End of time range (default: now)")
 
 	issueCmd.AddCommand(issueActivityCmd)
 }
@@ -73,6 +80,8 @@ func init() {
 func resetIssueActivityFlags() {
 	issueActivityRepo = ""
 	issueActivityGitHub = false
+	issueActivityFrom = ""
+	issueActivityTo = ""
 }
 
 // runIssueActivity implements `zh issue activity <issue>`.
@@ -140,6 +149,37 @@ func runIssueActivity(cmd *cobra.Command, args []string) error {
 	sort.Slice(allEvents, func(i, j int) bool {
 		return allEvents[i].Time.Before(allEvents[j].Time)
 	})
+
+	// Filter by time range if --from or --to is set
+	if issueActivityFrom != "" || issueActivityTo != "" {
+		now := time.Now()
+		if issueActivityFrom != "" {
+			fromTime, err := parseTimeFlag(issueActivityFrom, now)
+			if err != nil {
+				return exitcode.Usage(fmt.Sprintf("invalid --from value: %v", err))
+			}
+			filtered := allEvents[:0]
+			for _, ev := range allEvents {
+				if !ev.Time.Before(fromTime) {
+					filtered = append(filtered, ev)
+				}
+			}
+			allEvents = filtered
+		}
+		if issueActivityTo != "" {
+			toTime, err := parseTimeFlag(issueActivityTo, now)
+			if err != nil {
+				return exitcode.Usage(fmt.Sprintf("invalid --to value: %v", err))
+			}
+			filtered := allEvents[:0]
+			for _, ev := range allEvents {
+				if !ev.Time.After(toTime) {
+					filtered = append(filtered, ev)
+				}
+			}
+			allEvents = filtered
+		}
+	}
 
 	issueRef := fmt.Sprintf("%s#%d", issueInfo.RepoName, issueInfo.Number)
 

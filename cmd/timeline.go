@@ -101,6 +101,7 @@ const githubIssueTimelineQuery = `query GetGitHubTimeline($owner: String!, $repo
       ... on PullRequest {
         __typename
         createdAt
+        headRefName
         author { login }
         userContentEdits(first: 1) { nodes { createdAt editor { login } } }
         timelineItems(first: $first, after: $after) {
@@ -487,10 +488,11 @@ func jsonInt(v any) int {
 
 // ghTimelineResult holds the results from a GitHub timeline fetch.
 type ghTimelineResult struct {
-	Events    []activityEvent
-	IsPR      bool
-	CreatedAt time.Time
-	CreatedBy string
+	Events     []activityEvent
+	IsPR       bool
+	HeadBranch string
+	CreatedAt  time.Time
+	CreatedBy  string
 }
 
 // fetchGitHubTimeline fetches timeline events from the GitHub API.
@@ -528,9 +530,10 @@ func fetchGitHubTimeline(ghClient *gh.Client, owner, repo string, number int) (*
 		}
 
 		var timeline struct {
-			TypeName  string `json:"__typename"`
-			CreatedAt string `json:"createdAt"`
-			Author    *struct {
+			TypeName    string `json:"__typename"`
+			CreatedAt   string `json:"createdAt"`
+			HeadRefName string `json:"headRefName"`
+			Author      *struct {
 				Login string `json:"login"`
 			} `json:"author"`
 			UserContentEdits *struct {
@@ -557,6 +560,7 @@ func fetchGitHubTimeline(ghClient *gh.Client, owner, repo string, number int) (*
 		// On first page, extract metadata and description edits
 		if cursor == nil {
 			result.IsPR = timeline.TypeName == "PullRequest"
+			result.HeadBranch = timeline.HeadRefName
 			if t, err := time.Parse(time.RFC3339, timeline.CreatedAt); err == nil {
 				result.CreatedAt = t.Local()
 			}

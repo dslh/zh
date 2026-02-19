@@ -30,6 +30,7 @@ type activityIssue struct {
 	RepoName           string             `json:"repoName"`
 	RepoOwner          string             `json:"repoOwner"`
 	IsPR               bool               `json:"isPR,omitempty"`
+	HeadBranch         string             `json:"headBranch,omitempty"`
 	ConnectedIssue     string             `json:"connectedIssue,omitempty"`
 	connectedIssueInfo connectedIssueInfo // transient: full info of connected issue (for placeholder/fetch)
 	Events             []activityEvent    `json:"events,omitempty"`
@@ -954,12 +955,14 @@ func fetchActivityTimelines(client *api.Client, ghClient *gh.Client, includeGitH
 
 			// Fetch GitHub timeline if requested
 			var isPR bool
+			var headBranch string
 			var createdAt time.Time
 			var createdBy string
 			if (includeGitHub || ghSourced) && ghClient != nil && issue.RepoOwner != "" {
 				ghResult, err := fetchGitHubTimeline(ghClient, issue.RepoOwner, issue.RepoName, issue.Number)
 				if err == nil {
 					isPR = ghResult.IsPR
+					headBranch = ghResult.HeadBranch
 					createdAt = ghResult.CreatedAt
 					createdBy = ghResult.CreatedBy
 					for _, ev := range ghResult.Events {
@@ -1004,6 +1007,9 @@ func fetchActivityTimelines(client *api.Client, ghClient *gh.Client, includeGitH
 			mu.Lock()
 			issue.Events = events
 			issue.IsPR = isPR || issue.IsPR
+			if headBranch != "" {
+				issue.HeadBranch = headBranch
+			}
 			issue.ConnectedIssue = connInfo.Ref
 			issue.connectedIssueInfo = connInfo
 			issue.ConnectedPRRefs = prRefs
@@ -1461,6 +1467,9 @@ func renderActivityDetail(w interface{ Write([]byte) (int, error) }, issues []ac
 		for _, issue := range pipelineIssues {
 			prefix := formatActivityPrefix(issue)
 			header := fmt.Sprintf("\n%s%s: %s", prefix, output.Cyan(issue.Ref), issue.Title)
+			if issue.HeadBranch != "" {
+				header += " " + output.Dim("("+issue.HeadBranch+")")
+			}
 			fmt.Fprintln(w, header)
 
 			if len(issue.Events) == 0 {
@@ -1484,7 +1493,11 @@ func renderActivityDetail(w interface{ Write([]byte) (int, error) }, issues []ac
 			// Render nested connected PRs
 			for _, pr := range issue.ConnectedPRs {
 				connectedPRCount++
-				fmt.Fprintf(w, "  %s %s: %s\n", output.Dim("└─"), output.Cyan(pr.Ref), pr.Title)
+				prHeader := fmt.Sprintf("  %s %s: %s", output.Dim("└─"), output.Cyan(pr.Ref), pr.Title)
+				if pr.HeadBranch != "" {
+					prHeader += " " + output.Dim("("+pr.HeadBranch+")")
+				}
+				fmt.Fprintln(w, prHeader)
 				if len(pr.Events) == 0 {
 					fmt.Fprintln(w, output.Dim("     (no events in time range)"))
 				} else {

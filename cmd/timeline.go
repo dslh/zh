@@ -370,13 +370,26 @@ func describeZenHubEvent(key string, data map[string]any) string {
 		if tp, ok := data["to_pipeline"].(map[string]any); ok {
 			to = jsonString(tp["name"])
 		}
+		var desc string
 		if from != "" && to != "" {
-			return fmt.Sprintf("moved from %q to %q", from, to)
+			desc = fmt.Sprintf("moved from %q to %q", from, to)
+		} else if to != "" {
+			desc = fmt.Sprintf("moved to %q", to)
+		} else {
+			desc = "moved to another pipeline"
 		}
-		if to != "" {
-			return fmt.Sprintf("moved to %q", to)
+		// Check for "via PR" context
+		if pr, ok := data["pull_request"].(map[string]any); ok {
+			number := jsonInt(pr["number"])
+			repo := ""
+			if prRepo, ok := data["pull_request_repository"].(map[string]any); ok {
+				repo = jsonString(prRepo["name"])
+			}
+			if repo != "" && number > 0 {
+				desc += fmt.Sprintf(" via PR %s#%d", repo, number)
+			}
 		}
-		return "moved to another pipeline"
+		return desc
 
 	case "issue.add_to_sprint":
 		if s, ok := data["sprint"].(map[string]any); ok {

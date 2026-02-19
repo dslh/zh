@@ -886,9 +886,10 @@ func TestActivityDetailNestedPR(t *testing.T) {
 				"connections": map[string]any{
 					"nodes": []any{
 						map[string]any{
+							"id":         "i1",
 							"number":     42,
 							"title":      "Fix login page",
-							"repository": map[string]any{"name": "task-tracker"},
+							"repository": map[string]any{"name": "task-tracker", "ownerName": "dlakehammond"},
 						},
 					},
 				},
@@ -1038,6 +1039,300 @@ func TestActivityDetailStandalonePR(t *testing.T) {
 	// Should not contain └─ since there's no nesting
 	if strings.Contains(out, "└─") {
 		t.Errorf("standalone PR should not have tree indicator, got: %s", out)
+	}
+}
+
+func TestActivityDetailMultiplePRsSameParent(t *testing.T) {
+	resetActivityFlags()
+
+	ms := testutil.NewMockServer(t)
+	ghMs := testutil.NewMockServer(t)
+
+	now := time.Now().UTC()
+	recent := now.Add(-2 * time.Hour).Format(time.RFC3339)
+
+	// Two PRs in results, parent issue NOT in results
+	ms.HandleQuery("ActivitySearch", activityPipelineSearchResponse("In Progress", []map[string]any{
+		makeActivityPRNode("pr1", 100, "Fix login CSS", "task-tracker", "dlakehammond", recent, "In Progress"),
+		makeActivityPRNode("pr2", 101, "Fix login JS", "task-tracker", "dlakehammond", recent, "In Progress"),
+	}))
+	ms.HandleQuery("ActivityClosed", activityClosedResponse(nil))
+
+	// Timeline for PRs (both get the same handler — first match)
+	ms.HandleQuery("GetIssueTimelineByNode", map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"__typename": "Issue",
+				"id":         "pr1",
+				"number":     100,
+				"title":      "Fix login CSS",
+				"repository": map[string]any{
+					"name":  "task-tracker",
+					"owner": map[string]any{"login": "dlakehammond"},
+				},
+				"timelineItems": map[string]any{
+					"totalCount": 0,
+					"pageInfo":   map[string]any{"hasNextPage": false, "endCursor": ""},
+					"nodes":      []any{},
+				},
+			},
+		},
+	})
+
+	// PR connections: both PRs connect to task-tracker#42 (parent issue)
+	ms.HandleQuery("PRConnections", map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"connections": map[string]any{
+					"nodes": []any{
+						map[string]any{
+							"id":         "parent-42",
+							"number":     42,
+							"title":      "Fix login page",
+							"repository": map[string]any{"name": "task-tracker", "ownerName": "dlakehammond"},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	// Connected PRs for the fetched parent: returns both PRs
+	ms.HandleQuery("IssueConnectedPRs", map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"connectedPrs": map[string]any{
+					"nodes": []any{
+						map[string]any{
+							"number": 100,
+							"title":  "Fix login CSS",
+							"repository": map[string]any{
+								"name":      "task-tracker",
+								"ownerName": "dlakehammond",
+							},
+						},
+						map[string]any{
+							"number": 101,
+							"title":  "Fix login JS",
+							"repository": map[string]any{
+								"name":      "task-tracker",
+								"ownerName": "dlakehammond",
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	setupActivityTestEnvWithGitHub(t, ms, ghMs)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"activity", "--detail"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("activity --detail returned error: %v", err)
+	}
+
+	out := buf.String()
+
+	// Parent should appear exactly once
+	count := strings.Count(out, "task-tracker#42")
+	if count != 1 {
+		t.Errorf("parent task-tracker#42 should appear exactly once, appeared %d times in: %s", count, out)
+	}
+
+	// Both PRs should be nested
+	if !strings.Contains(out, "task-tracker#100") {
+		t.Errorf("output should contain PR #100, got: %s", out)
+	}
+	if !strings.Contains(out, "task-tracker#101") {
+		t.Errorf("output should contain PR #101, got: %s", out)
+	}
+
+	// Should use tree indicator for nesting
+	if !strings.Contains(out, "└─") {
+		t.Errorf("output should contain tree indicator for nested PRs, got: %s", out)
+	}
+}
+
+func TestActivityDetailSiblingPRs(t *testing.T) {
+	resetActivityFlags()
+
+	ms := testutil.NewMockServer(t)
+	ghMs := testutil.NewMockServer(t)
+
+	now := time.Now().UTC()
+	recent := now.Add(-2 * time.Hour).Format(time.RFC3339)
+
+	// One PR in results, parent NOT in results.
+	// Parent has 2 connected PRs (one with events in results, one without).
+	ms.HandleQuery("ActivitySearch", activityPipelineSearchResponse("In Progress", []map[string]any{
+		makeActivityPRNode("pr1", 100, "Fix login CSS", "task-tracker", "dlakehammond", recent, "In Progress"),
+	}))
+	ms.HandleQuery("ActivityClosed", activityClosedResponse(nil))
+
+	// Timeline for PR
+	ms.HandleQuery("GetIssueTimelineByNode", map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"__typename": "Issue",
+				"id":         "pr1",
+				"number":     100,
+				"title":      "Fix login CSS",
+				"repository": map[string]any{
+					"name":  "task-tracker",
+					"owner": map[string]any{"login": "dlakehammond"},
+				},
+				"timelineItems": map[string]any{
+					"totalCount": 1,
+					"pageInfo":   map[string]any{"hasNextPage": false, "endCursor": ""},
+					"nodes": []any{
+						map[string]any{
+							"id":        "t1",
+							"key":       "issue.change_pipeline",
+							"createdAt": recent,
+							"data": map[string]any{
+								"from_pipeline": map[string]any{"name": "Backlog"},
+								"to_pipeline":   map[string]any{"name": "In Progress"},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	// PR connection: PR → parent task-tracker#42
+	ms.HandleQuery("PRConnections", map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"connections": map[string]any{
+					"nodes": []any{
+						map[string]any{
+							"id":         "parent-42",
+							"number":     42,
+							"title":      "Fix login page",
+							"repository": map[string]any{"name": "task-tracker", "ownerName": "dlakehammond"},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	// Connected PRs for the fetched parent: returns both PRs (one with events, one without)
+	ms.HandleQuery("IssueConnectedPRs", map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"connectedPrs": map[string]any{
+					"nodes": []any{
+						map[string]any{
+							"number": 100,
+							"title":  "Fix login CSS",
+							"repository": map[string]any{
+								"name":      "task-tracker",
+								"ownerName": "dlakehammond",
+							},
+						},
+						map[string]any{
+							"number": 102,
+							"title":  "Fix login tests",
+							"repository": map[string]any{
+								"name":      "task-tracker",
+								"ownerName": "dlakehammond",
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	setupActivityTestEnvWithGitHub(t, ms, ghMs)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"activity", "--detail"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("activity --detail returned error: %v", err)
+	}
+
+	out := buf.String()
+
+	// Parent should appear
+	if !strings.Contains(out, "task-tracker#42") {
+		t.Errorf("output should contain parent issue, got: %s", out)
+	}
+
+	// Both PRs should appear as nested
+	if !strings.Contains(out, "task-tracker#100") {
+		t.Errorf("output should contain PR #100, got: %s", out)
+	}
+	if !strings.Contains(out, "task-tracker#102") {
+		t.Errorf("output should contain sibling PR #102, got: %s", out)
+	}
+
+	// Sibling PR without events should show "(no events in time range)"
+	if !strings.Contains(out, "no events in time range") {
+		t.Errorf("sibling PR without events should show '(no events in time range)', got: %s", out)
+	}
+}
+
+func TestNestConnectedPRsConsolidate(t *testing.T) {
+	// Two PRs reference the same parent that's not in the list.
+	// Pass 3 should create ONE placeholder with both PRs nested.
+	issues := []activityIssue{
+		{
+			ID:             "pr1",
+			Ref:            "repo#100",
+			Title:          "PR one",
+			Pipeline:       "In Progress",
+			IsPR:           true,
+			ConnectedIssue: "repo#42",
+			connectedIssueInfo: connectedIssueInfo{
+				Ref:   "repo#42",
+				Title: "Parent issue",
+			},
+		},
+		{
+			ID:             "pr2",
+			Ref:            "repo#101",
+			Title:          "PR two",
+			Pipeline:       "In Progress",
+			IsPR:           true,
+			ConnectedIssue: "repo#42",
+			connectedIssueInfo: connectedIssueInfo{
+				Ref:   "repo#42",
+				Title: "Parent issue",
+			},
+		},
+	}
+
+	nestConnectedPRs(&issues)
+
+	// Should have exactly one issue: the placeholder parent
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue (placeholder parent), got %d", len(issues))
+	}
+
+	parent := issues[0]
+	if parent.Ref != "repo#42" {
+		t.Errorf("placeholder ref should be repo#42, got %s", parent.Ref)
+	}
+	if parent.Title != "Parent issue" {
+		t.Errorf("placeholder title should be 'Parent issue', got %s", parent.Title)
+	}
+	if len(parent.ConnectedPRs) != 2 {
+		t.Fatalf("placeholder should have 2 connected PRs, got %d", len(parent.ConnectedPRs))
+	}
+	if parent.ConnectedPRs[0].Ref != "repo#100" {
+		t.Errorf("first PR should be repo#100, got %s", parent.ConnectedPRs[0].Ref)
+	}
+	if parent.ConnectedPRs[1].Ref != "repo#101" {
+		t.Errorf("second PR should be repo#101, got %s", parent.ConnectedPRs[1].Ref)
 	}
 }
 

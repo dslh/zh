@@ -19,22 +19,22 @@ import (
 
 // activityIssue holds an issue found during the activity scan.
 type activityIssue struct {
-	ID                  string           `json:"id"`
-	Number              int              `json:"number"`
-	Title               string           `json:"title"`
-	Ref                 string           `json:"ref"`
-	Pipeline            string           `json:"pipeline"`
-	UpdatedAt           time.Time        `json:"updatedAt"`
-	GhUpdatedAt         time.Time        `json:"ghUpdatedAt,omitempty"`
-	Assignees           []string         `json:"assignees,omitempty"`
-	RepoName            string           `json:"repoName"`
-	RepoOwner           string           `json:"repoOwner"`
-	IsPR                bool             `json:"isPR,omitempty"`
-	ConnectedIssue      string           `json:"connectedIssue,omitempty"`
-	connectedIssueTitle string           // transient: title of connected issue (for placeholder creation)
-	Events              []activityEvent  `json:"events,omitempty"`
-	ConnectedPRRefs     []connectedPRRef `json:"-"`
-	ConnectedPRs        []activityIssue  `json:"connectedPRs,omitempty"`
+	ID                 string             `json:"id"`
+	Number             int                `json:"number"`
+	Title              string             `json:"title"`
+	Ref                string             `json:"ref"`
+	Pipeline           string             `json:"pipeline"`
+	UpdatedAt          time.Time          `json:"updatedAt"`
+	GhUpdatedAt        time.Time          `json:"ghUpdatedAt,omitempty"`
+	Assignees          []string           `json:"assignees,omitempty"`
+	RepoName           string             `json:"repoName"`
+	RepoOwner          string             `json:"repoOwner"`
+	IsPR               bool               `json:"isPR,omitempty"`
+	ConnectedIssue     string             `json:"connectedIssue,omitempty"`
+	connectedIssueInfo connectedIssueInfo // transient: full info of connected issue (for placeholder/fetch)
+	Events             []activityEvent    `json:"events,omitempty"`
+	ConnectedPRRefs    []connectedPRRef   `json:"-"`
+	ConnectedPRs       []activityIssue    `json:"connectedPRs,omitempty"`
 }
 
 // connectedPRRef holds transient data about a PR connected to an issue.
@@ -401,6 +401,7 @@ func runActivity(cmd *cobra.Command, args []string) error {
 	// Step 3: Detail mode — fetch per-issue timelines
 	if activityDetail && len(issues) > 0 {
 		fetchActivityTimelines(client, ghClient, activityGitHub, &issues, fromTime, toTime)
+		fetchMissingParentIssues(client, ghClient, activityGitHub, &issues, fromTime, toTime)
 		nestConnectedPRs(&issues)
 	}
 
@@ -1004,12 +1005,119 @@ func fetchActivityTimelines(client *api.Client, ghClient *gh.Client, includeGitH
 			issue.Events = events
 			issue.IsPR = isPR || issue.IsPR
 			issue.ConnectedIssue = connInfo.Ref
-			issue.connectedIssueTitle = connInfo.Title
+			issue.connectedIssueInfo = connInfo
 			issue.ConnectedPRRefs = prRefs
 			mu.Unlock()
 		}(i)
 	}
 	wg.Wait()
+}
+
+// fetchMissingParentIssues fetches full data for parent issues that are referenced
+// by PRs in the activity results but aren't themselves in the results (their updatedAt
+// wasn't recent enough to appear in the pipeline scan). This resolves duplicate
+// placeholder parents, missing timelines, and missing sibling PRs.
+func fetchMissingParentIssues(client *api.Client, ghClient *gh.Client, includeGitHub bool, issues *[]activityIssue, fromTime, toTime time.Time) {
+	// Build ref set of current issues
+	refSet := make(map[string]bool, len(*issues))
+	for _, item := range *issues {
+		refSet[item.Ref] = true
+	}
+
+	// Collect unique missing parent refs from PRs
+	type parentInfo struct {
+		info     connectedIssueInfo
+		pipeline string
+	}
+	missingParents := make(map[string]parentInfo) // ref → info
+	for _, item := range *issues {
+		if !item.IsPR || item.ConnectedIssue == "" {
+			continue
+		}
+		if refSet[item.ConnectedIssue] {
+			continue // parent already in results
+		}
+		if _, seen := missingParents[item.ConnectedIssue]; seen {
+			continue
+		}
+		if item.connectedIssueInfo.ID == "" {
+			continue // no ID to fetch with
+		}
+		missingParents[item.ConnectedIssue] = parentInfo{
+			info:     item.connectedIssueInfo,
+			pipeline: item.Pipeline,
+		}
+	}
+
+	if len(missingParents) == 0 {
+		return
+	}
+
+	// Fetch each missing parent concurrently
+	const concurrency = 5
+	sem := make(chan struct{}, concurrency)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var fetched []activityIssue
+
+	for ref, pi := range missingParents {
+		wg.Add(1)
+		go func(ref string, pi parentInfo) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			parent := activityIssue{
+				ID:        pi.info.ID,
+				Number:    pi.info.Number,
+				Title:     pi.info.Title,
+				Ref:       ref,
+				Pipeline:  pi.pipeline,
+				RepoName:  pi.info.RepoName,
+				RepoOwner: pi.info.RepoOwner,
+			}
+
+			var events []activityEvent
+
+			// Fetch ZenHub timeline
+			_, zhEvents, err := fetchZenHubTimelineByNode(client, pi.info.ID)
+			if err == nil {
+				for _, ev := range zhEvents {
+					if !ev.Time.Before(fromTime) && !ev.Time.After(toTime) {
+						events = append(events, ev)
+					}
+				}
+			}
+
+			// Fetch GitHub timeline if requested
+			if includeGitHub && ghClient != nil && pi.info.RepoOwner != "" {
+				ghResult, err := fetchGitHubTimeline(ghClient, pi.info.RepoOwner, pi.info.RepoName, pi.info.Number)
+				if err == nil {
+					for _, ev := range ghResult.Events {
+						if !ev.Time.Before(fromTime) && !ev.Time.After(toTime) {
+							events = append(events, ev)
+						}
+					}
+				}
+			}
+
+			// Sort events chronologically
+			sort.Slice(events, func(i, j int) bool {
+				return events[i].Time.Before(events[j].Time)
+			})
+			parent.Events = events
+
+			// Fetch connected PRs
+			parent.ConnectedPRRefs = fetchIssueConnectedPRs(client, pi.info.ID)
+
+			mu.Lock()
+			fetched = append(fetched, parent)
+			mu.Unlock()
+		}(ref, pi)
+	}
+	wg.Wait()
+
+	*issues = append(*issues, fetched...)
 }
 
 // nestConnectedPRs groups PRs under their connected parent issues.
@@ -1068,8 +1176,10 @@ func nestConnectedPRs(issues *[]activityIssue) {
 		}
 	}
 
-	// Pass 3: PRs with ConnectedIssue not in refMap → create placeholder parent
-	var placeholders []activityIssue
+	// Pass 3: PRs with ConnectedIssue not in refMap → create consolidated placeholder parents
+	placeholderMap := make(map[string][]activityIssue)     // ref → PRs
+	placeholderInfo := make(map[string]connectedIssueInfo) // ref → parent info
+	placeholderPipeline := make(map[string]string)         // ref → pipeline
 	for i, item := range list {
 		if !item.IsPR || item.ConnectedIssue == "" || nested[i] {
 			continue
@@ -1080,18 +1190,44 @@ func nestConnectedPRs(issues *[]activityIssue) {
 		// Create placeholder parent issue
 		nested[i] = true
 		pr := list[i]
-		placeholder := activityIssue{
-			Ref:          item.ConnectedIssue,
-			Title:        item.connectedIssueTitle,
-			Pipeline:     item.Pipeline,
-			ConnectedPRs: []activityIssue{pr},
+		if existing, ok := placeholderMap[item.ConnectedIssue]; ok {
+			placeholderMap[item.ConnectedIssue] = append(existing, pr)
+		} else {
+			placeholderMap[item.ConnectedIssue] = []activityIssue{pr}
+			placeholderInfo[item.ConnectedIssue] = item.connectedIssueInfo
+			placeholderPipeline[item.ConnectedIssue] = item.Pipeline
 		}
-		placeholders = append(placeholders, placeholder)
 	}
 
-	// Apply nested PRs to parents, sorted by Ref
+	// Build placeholder parents from consolidated map
+	var placeholders []activityIssue
+	// Sort placeholder refs for deterministic output
+	var placeholderRefs []string
+	for ref := range placeholderMap {
+		placeholderRefs = append(placeholderRefs, ref)
+	}
+	sort.Strings(placeholderRefs)
+	for _, ref := range placeholderRefs {
+		prs := placeholderMap[ref]
+		info := placeholderInfo[ref]
+		placeholders = append(placeholders, activityIssue{
+			Ref:          ref,
+			Title:        info.Title,
+			Pipeline:     placeholderPipeline[ref],
+			ConnectedPRs: prs,
+		})
+	}
+
+	// Apply nested PRs to parents, sorted: events first, then by Ref
 	for parentIdx, prs := range parentPRs {
-		sort.Slice(prs, func(i, j int) bool { return prs[i].Ref < prs[j].Ref })
+		sort.Slice(prs, func(i, j int) bool {
+			iHas := len(prs[i].Events) > 0
+			jHas := len(prs[j].Events) > 0
+			if iHas != jHas {
+				return iHas
+			}
+			return prs[i].Ref < prs[j].Ref
+		})
 		list[parentIdx].ConnectedPRs = prs
 	}
 
@@ -1116,9 +1252,10 @@ const prConnectionQuery = `query PRConnections($id: ID!) {
     ... on Issue {
       connections(first: 1) {
         nodes {
+          id
           number
           title
-          repository { name }
+          repository { name ownerName }
         }
       }
     }
@@ -1127,8 +1264,12 @@ const prConnectionQuery = `query PRConnections($id: ID!) {
 
 // connectedIssueInfo holds the ref and title of a connected issue.
 type connectedIssueInfo struct {
-	Ref   string
-	Title string
+	Ref       string
+	Title     string
+	ID        string
+	Number    int
+	RepoName  string
+	RepoOwner string
 }
 
 // fetchPRConnection fetches the connected issue for a PR via ZenHub's connections field.
@@ -1141,10 +1282,12 @@ func fetchPRConnection(client *api.Client, nodeID string) connectedIssueInfo {
 		Node *struct {
 			Connections struct {
 				Nodes []struct {
+					ID         string `json:"id"`
 					Number     int    `json:"number"`
 					Title      string `json:"title"`
 					Repository struct {
-						Name string `json:"name"`
+						Name      string `json:"name"`
+						OwnerName string `json:"ownerName"`
 					} `json:"repository"`
 				} `json:"nodes"`
 			} `json:"connections"`
@@ -1157,8 +1300,12 @@ func fetchPRConnection(client *api.Client, nodeID string) connectedIssueInfo {
 		conn := resp.Node.Connections.Nodes[0]
 		if conn.Repository.Name != "" && conn.Number > 0 {
 			return connectedIssueInfo{
-				Ref:   fmt.Sprintf("%s#%d", conn.Repository.Name, conn.Number),
-				Title: conn.Title,
+				Ref:       fmt.Sprintf("%s#%d", conn.Repository.Name, conn.Number),
+				Title:     conn.Title,
+				ID:        conn.ID,
+				Number:    conn.Number,
+				RepoName:  conn.Repository.Name,
+				RepoOwner: conn.Repository.OwnerName,
 			}
 		}
 	}
@@ -1339,7 +1486,7 @@ func renderActivityDetail(w interface{ Write([]byte) (int, error) }, issues []ac
 				connectedPRCount++
 				fmt.Fprintf(w, "  %s %s: %s\n", output.Dim("└─"), output.Cyan(pr.Ref), pr.Title)
 				if len(pr.Events) == 0 {
-					fmt.Fprintln(w, output.Dim("     (no events)"))
+					fmt.Fprintln(w, output.Dim("     (no events in time range)"))
 				} else {
 					for _, ev := range pr.Events {
 						dateStr := ev.Time.Format("Jan 2 15:04")

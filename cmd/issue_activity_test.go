@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -248,6 +249,138 @@ func TestIssueActivityGitHubNoAccess(t *testing.T) {
 	}
 }
 
+// --- issue activity with --prs ---
+
+func TestIssueActivityWithPRs(t *testing.T) {
+	resetIssueFlags()
+	resetIssueActivityFlags()
+
+	ms := setupIssueActivityServerWithPRs(t)
+	setupIssueTestEnv(t, ms)
+
+	issueActivityPRs = true
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"issue", "activity", "task-tracker#1", "--prs"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("issue activity --prs returned error: %v", err)
+	}
+
+	out := buf.String()
+	// Should contain issue events
+	if !strings.Contains(out, "set estimate to 5.0") {
+		t.Errorf("output should contain issue estimate event, got: %s", out)
+	}
+	// Should contain connected PR with tree prefix
+	if !strings.Contains(out, "└─") {
+		t.Errorf("output should contain tree prefix for connected PR, got: %s", out)
+	}
+	if !strings.Contains(out, "task-tracker#6") {
+		t.Errorf("output should contain PR ref task-tracker#6, got: %s", out)
+	}
+	// Should contain PR events
+	if !strings.Contains(out, "moved from") || !strings.Contains(out, "Backlog") {
+		t.Errorf("output should contain PR pipeline move event, got: %s", out)
+	}
+	// Should show connected PR count in summary
+	if !strings.Contains(out, "1 connected PR(s)") {
+		t.Errorf("output should show connected PR count, got: %s", out)
+	}
+}
+
+func TestIssueActivityPRsWithFromFlag(t *testing.T) {
+	resetIssueFlags()
+	resetIssueActivityFlags()
+
+	ms := setupIssueActivityServerWithPRs(t)
+	setupIssueTestEnv(t, ms)
+
+	issueActivityPRs = true
+	issueActivityFrom = "2026-02-09"
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"issue", "activity", "task-tracker#1", "--prs", "--from=2026-02-09"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("issue activity --prs --from returned error: %v", err)
+	}
+
+	out := buf.String()
+	// Issue events from Feb 10 should be present
+	if !strings.Contains(out, "set estimate to 5.0") {
+		t.Errorf("output should contain issue estimate event (Feb 10), got: %s", out)
+	}
+	// Issue event from Feb 7 should be filtered out
+	if strings.Contains(out, "connected PR") && !strings.Contains(out, "└─") {
+		t.Errorf("issue-level PR connect event (Feb 7) should be filtered out, got: %s", out)
+	}
+	// PR tree should still appear (PRs shown even with no events in range)
+	if !strings.Contains(out, "└─") {
+		t.Errorf("output should still show connected PR tree, got: %s", out)
+	}
+	if !strings.Contains(out, "task-tracker#6") {
+		t.Errorf("output should contain PR ref task-tracker#6, got: %s", out)
+	}
+	// PR event from Feb 5 should be filtered out
+	if strings.Contains(out, "moved from") && strings.Contains(out, "Backlog") {
+		t.Errorf("PR pipeline event (Feb 5) should be filtered out, got: %s", out)
+	}
+	// PR with no events in range should show "(no events in time range)"
+	if !strings.Contains(out, "no events in time range") {
+		t.Errorf("output should show '(no events in time range)' for PR, got: %s", out)
+	}
+}
+
+func TestIssueActivityPRsJSON(t *testing.T) {
+	resetIssueFlags()
+	resetIssueActivityFlags()
+
+	ms := setupIssueActivityServerWithPRs(t)
+	setupIssueTestEnv(t, ms)
+
+	issueActivityPRs = true
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"issue", "activity", "task-tracker#1", "--prs", "--output=json"})
+	outputFormat = "json"
+	defer func() { outputFormat = "" }()
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("issue activity --prs --output=json returned error: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nOutput: %s", err, buf.String())
+	}
+
+	prs, ok := result["connectedPRs"].([]any)
+	if !ok {
+		t.Fatal("JSON should contain connectedPRs array")
+	}
+	if len(prs) != 1 {
+		t.Errorf("expected 1 connected PR, got %d", len(prs))
+	}
+
+	pr := prs[0].(map[string]any)
+	if pr["ref"] != "task-tracker#6" {
+		t.Errorf("PR ref should be task-tracker#6, got: %v", pr["ref"])
+	}
+	prEvents, ok := pr["events"].([]any)
+	if !ok {
+		t.Fatal("PR should contain events array")
+	}
+	if len(prEvents) != 1 {
+		t.Errorf("expected 1 PR event, got %d", len(prEvents))
+	}
+}
+
+// --- help test (must be last — Cobra's --help flag persists) ---
+
 func TestIssueActivityHelp(t *testing.T) {
 	resetIssueFlags()
 	resetIssueActivityFlags()
@@ -275,6 +408,9 @@ func TestIssueActivityHelp(t *testing.T) {
 	}
 	if !strings.Contains(out, "--to") {
 		t.Error("help should mention --to flag")
+	}
+	if !strings.Contains(out, "--prs") {
+		t.Error("help should mention --prs flag")
 	}
 }
 
@@ -579,4 +715,133 @@ func setupIssueActivityTestEnvWithGitHub(t *testing.T, ms *testutil.MockServer, 
 	_ = cache.Set(resolve.RepoCacheKey("ws-123"), []resolve.CachedRepo{
 		{ID: "r1", GhID: 12345, Name: "task-tracker", OwnerName: "dlakehammond"},
 	})
+}
+
+func setupIssueActivityServerWithPRs(t *testing.T) *testutil.MockServer {
+	t.Helper()
+
+	ms := testutil.NewMockServer(t)
+
+	ms.HandleQuery("ListRepos", repoResolutionResponse())
+	ms.HandleQuery("IssueByInfo", issueByInfoResolutionResponse())
+
+	// Connected PRs query — returns PR #6
+	ms.HandleQuery("IssueConnectedPRs", map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"connectedPrs": map[string]any{
+					"nodes": []any{
+						map[string]any{
+							"number": 6,
+							"title":  "Add due date support",
+							"repository": map[string]any{
+								"name":      "task-tracker",
+								"ownerName": "dlakehammond",
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	// Issue #1 timeline — use Handle to match by issueNumber variable
+	issueTimelineResp, _ := json.Marshal(map[string]any{
+		"data": map[string]any{
+			"issueByInfo": map[string]any{
+				"id":     "i1",
+				"number": 1,
+				"title":  "Fix login button alignment",
+				"repository": map[string]any{
+					"name":  "task-tracker",
+					"owner": map[string]any{"login": "dlakehammond"},
+				},
+				"timelineItems": map[string]any{
+					"totalCount": 3,
+					"pageInfo":   map[string]any{"hasNextPage": false, "endCursor": ""},
+					"nodes": []any{
+						map[string]any{
+							"id": "t1", "key": "issue.set_estimate", "createdAt": "2026-02-10T00:47:58Z",
+							"data": map[string]any{"github_user": map[string]any{"login": "dlakehammond"}, "current_value": "5.0"},
+						},
+						map[string]any{
+							"id": "t2", "key": "issue.set_priority", "createdAt": "2026-02-10T01:28:59Z",
+							"data": map[string]any{"github_user": map[string]any{"login": "dlakehammond"}, "priority": map[string]any{"name": "High priority"}},
+						},
+						map[string]any{
+							"id": "t3", "key": "issue.connect_issue_to_pr", "createdAt": "2026-02-07T23:06:36Z",
+							"data": map[string]any{"pull_request": map[string]any{"number": 6, "title": "Add due date support"}, "pull_request_repository": map[string]any{"name": "task-tracker"}},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	// PR #6 timeline
+	prTimelineResp, _ := json.Marshal(map[string]any{
+		"data": map[string]any{
+			"issueByInfo": map[string]any{
+				"id":     "pr6",
+				"number": 6,
+				"title":  "Add due date support",
+				"repository": map[string]any{
+					"name":  "task-tracker",
+					"owner": map[string]any{"login": "dlakehammond"},
+				},
+				"timelineItems": map[string]any{
+					"totalCount": 1,
+					"pageInfo":   map[string]any{"hasNextPage": false, "endCursor": ""},
+					"nodes": []any{
+						map[string]any{
+							"id": "pt1", "key": "issue.transfer_pipeline", "createdAt": "2026-02-05T14:00:00Z",
+							"data": map[string]any{
+								"github_user":   map[string]any{"login": "dlakehammond"},
+								"from_pipeline": map[string]any{"name": "Backlog"},
+								"to_pipeline":   map[string]any{"name": "In Progress"},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	ms.Handle(
+		func(req testutil.GraphQLRequest) bool {
+			if !strings.Contains(req.Query, "GetIssueTimeline") {
+				return false
+			}
+			var vars map[string]any
+			_ = json.Unmarshal(req.Variables, &vars)
+			num, _ := vars["issueNumber"].(float64)
+			return int(num) == 1
+		},
+		func(w http.ResponseWriter, _ testutil.GraphQLRequest) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(issueTimelineResp)
+		},
+	)
+
+	ms.Handle(
+		func(req testutil.GraphQLRequest) bool {
+			if !strings.Contains(req.Query, "GetIssueTimeline") {
+				return false
+			}
+			var vars map[string]any
+			_ = json.Unmarshal(req.Variables, &vars)
+			num, _ := vars["issueNumber"].(float64)
+			return int(num) == 6
+		},
+		func(w http.ResponseWriter, _ testutil.GraphQLRequest) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(prTimelineResp)
+		},
+	)
+
+	_ = cache.Set(resolve.RepoCacheKey("ws-123"), []resolve.CachedRepo{
+		{ID: "r1", GhID: 12345, Name: "task-tracker", OwnerName: "dlakehammond"},
+	})
+
+	return ms
 }

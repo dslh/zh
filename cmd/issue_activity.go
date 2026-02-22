@@ -56,7 +56,8 @@ Examples:
   zh issue activity --repo=task-tracker 1
   zh issue activity task-tracker#1 --github
   zh issue activity task-tracker#1 --from=7d
-  zh issue activity task-tracker#1 --from=2026-01-01 --to=2026-02-01`,
+  zh issue activity task-tracker#1 --from=2026-01-01 --to=2026-02-01
+  zh issue activity task-tracker#1 --prs`,
 	Args: cobra.ExactArgs(1),
 	RunE: runIssueActivity,
 }
@@ -66,6 +67,7 @@ var (
 	issueActivityGitHub bool
 	issueActivityFrom   string
 	issueActivityTo     string
+	issueActivityPRs    bool
 )
 
 func init() {
@@ -73,6 +75,7 @@ func init() {
 	issueActivityCmd.Flags().BoolVar(&issueActivityGitHub, "github", false, "Include GitHub timeline events (requires GitHub access)")
 	issueActivityCmd.Flags().StringVar(&issueActivityFrom, "from", "", "Start of time range (e.g. 1d, 7d, 2h, yesterday, 2026-02-01)")
 	issueActivityCmd.Flags().StringVar(&issueActivityTo, "to", "", "End of time range (default: now)")
+	issueActivityCmd.Flags().BoolVar(&issueActivityPRs, "prs", false, "Include activity for connected pull requests")
 
 	issueCmd.AddCommand(issueActivityCmd)
 }
@@ -82,6 +85,7 @@ func resetIssueActivityFlags() {
 	issueActivityGitHub = false
 	issueActivityFrom = ""
 	issueActivityTo = ""
+	issueActivityPRs = false
 }
 
 // runIssueActivity implements `zh issue activity <issue>`.
@@ -98,6 +102,7 @@ func runIssueActivity(cmd *cobra.Command, args []string) error {
 	parsed, parseErr := resolve.ParseIssueRef(args[0])
 
 	var issueInfo struct {
+		ID        string
 		Number    int
 		Title     string
 		RepoName  string
@@ -110,7 +115,11 @@ func runIssueActivity(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		issueInfo = info
+		issueInfo.ID = parsed.ZenHubID
+		issueInfo.Number = info.Number
+		issueInfo.Title = info.Title
+		issueInfo.RepoName = info.RepoName
+		issueInfo.RepoOwner = info.RepoOwner
 		zhEvents = events
 	} else {
 		resolved, err := resolve.Issue(client, cfg.Workspace, args[0], &resolve.IssueOptions{
@@ -125,7 +134,11 @@ func runIssueActivity(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		issueInfo = info
+		issueInfo.ID = info.ID
+		issueInfo.Number = info.Number
+		issueInfo.Title = info.Title
+		issueInfo.RepoName = info.RepoName
+		issueInfo.RepoOwner = info.RepoOwner
 		zhEvents = events
 	}
 
@@ -183,14 +196,86 @@ func runIssueActivity(cmd *cobra.Command, args []string) error {
 
 	issueRef := fmt.Sprintf("%s#%d", issueInfo.RepoName, issueInfo.Number)
 
-	if output.IsJSON(outputFormat) {
-		return output.JSON(w, map[string]any{
-			"issue":  map[string]any{"ref": issueRef, "title": issueInfo.Title, "number": issueInfo.Number},
-			"events": allEvents,
-		})
+	// Fetch connected PRs if --prs is set
+	type connectedPR struct {
+		Ref        string          `json:"ref"`
+		Title      string          `json:"title"`
+		HeadBranch string          `json:"headBranch,omitempty"`
+		Events     []activityEvent `json:"events"`
+	}
+	var connectedPRs []connectedPR
+
+	if issueActivityPRs && issueInfo.ID != "" {
+		prRefs := fetchIssueConnectedPRs(client, issueInfo.ID)
+		for _, pr := range prRefs {
+			repo, err := resolve.LookupRepoWithRefresh(client, cfg.Workspace, pr.RepoName)
+			if err != nil {
+				continue
+			}
+			_, prEvents, err := fetchZenHubTimeline(client, repo.GhID, pr.Number)
+			if err != nil {
+				continue
+			}
+
+			var headBranch string
+			if issueActivityGitHub && ghClient != nil {
+				ghResult, err := fetchGitHubTimeline(ghClient, pr.RepoOwner, pr.RepoName, pr.Number)
+				if err == nil {
+					prEvents = append(prEvents, ghResult.Events...)
+					headBranch = ghResult.HeadBranch
+				}
+			}
+
+			sort.Slice(prEvents, func(i, j int) bool {
+				return prEvents[i].Time.Before(prEvents[j].Time)
+			})
+
+			// Apply same time filtering
+			if issueActivityFrom != "" || issueActivityTo != "" {
+				now := time.Now()
+				if issueActivityFrom != "" {
+					fromTime, _ := parseTimeFlag(issueActivityFrom, now)
+					filtered := prEvents[:0]
+					for _, ev := range prEvents {
+						if !ev.Time.Before(fromTime) {
+							filtered = append(filtered, ev)
+						}
+					}
+					prEvents = filtered
+				}
+				if issueActivityTo != "" {
+					toTime, _ := parseTimeFlag(issueActivityTo, now)
+					filtered := prEvents[:0]
+					for _, ev := range prEvents {
+						if !ev.Time.After(toTime) {
+							filtered = append(filtered, ev)
+						}
+					}
+					prEvents = filtered
+				}
+			}
+
+			connectedPRs = append(connectedPRs, connectedPR{
+				Ref:        pr.Ref,
+				Title:      pr.Title,
+				HeadBranch: headBranch,
+				Events:     prEvents,
+			})
+		}
 	}
 
-	if len(allEvents) == 0 {
+	if output.IsJSON(outputFormat) {
+		result := map[string]any{
+			"issue":  map[string]any{"ref": issueRef, "title": issueInfo.Title, "number": issueInfo.Number},
+			"events": allEvents,
+		}
+		if issueActivityPRs {
+			result["connectedPRs"] = connectedPRs
+		}
+		return output.JSON(w, result)
+	}
+
+	if len(allEvents) == 0 && len(connectedPRs) == 0 {
 		fmt.Fprintf(w, "No activity found for %s.\n", issueRef)
 		return nil
 	}
@@ -201,6 +286,9 @@ func runIssueActivity(cmd *cobra.Command, args []string) error {
 	showSource := issueActivityGitHub && ghClient != nil
 
 	d.Section("EVENTS")
+	if len(allEvents) == 0 {
+		fmt.Fprintln(w, output.Dim("  (no events in time range)"))
+	}
 	for _, ev := range allEvents {
 		dateStr := output.Dim(output.FormatDate(ev.Time))
 		actor := ""
@@ -215,19 +303,53 @@ func runIssueActivity(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(w, line)
 	}
 
-	fmt.Fprintf(w, "\nTotal: %d event(s)\n", len(allEvents))
+	totalEvents := len(allEvents)
+
+	// Render connected PRs
+	for _, pr := range connectedPRs {
+		prHeader := fmt.Sprintf("  %s %s: %s", output.Dim("└─"), output.Cyan(pr.Ref), pr.Title)
+		if pr.HeadBranch != "" {
+			prHeader += " " + output.Dim("("+pr.HeadBranch+")")
+		}
+		fmt.Fprintln(w, prHeader)
+		if len(pr.Events) == 0 {
+			fmt.Fprintln(w, output.Dim("     (no events in time range)"))
+		} else {
+			for _, ev := range pr.Events {
+				dateStr := output.Dim(output.FormatDate(ev.Time))
+				actor := ""
+				if ev.Actor != "" {
+					actor = "@" + ev.Actor + " "
+				}
+				line := fmt.Sprintf("     %s  %s%s", dateStr, actor, ev.Description)
+				if showSource {
+					line += "  " + output.Dim("["+ev.Source+"]")
+				}
+				fmt.Fprintln(w, line)
+				totalEvents++
+			}
+		}
+	}
+
+	summary := fmt.Sprintf("\nTotal: %d event(s)", totalEvents)
+	if len(connectedPRs) > 0 {
+		summary += fmt.Sprintf(", %d connected PR(s)", len(connectedPRs))
+	}
+	fmt.Fprintln(w, summary)
 
 	return nil
 }
 
 // fetchZenHubTimeline fetches ZenHub timeline items using repo GH ID and issue number.
 func fetchZenHubTimeline(client *api.Client, repoGhID, issueNumber int) (struct {
+	ID        string
 	Number    int
 	Title     string
 	RepoName  string
 	RepoOwner string
 }, []activityEvent, error) {
 	var info struct {
+		ID        string
 		Number    int
 		Title     string
 		RepoName  string
@@ -281,6 +403,7 @@ func fetchZenHubTimeline(client *api.Client, repoGhID, issueNumber int) (struct 
 			return info, nil, exitcode.NotFoundError(fmt.Sprintf("issue #%d not found", issueNumber))
 		}
 
+		info.ID = resp.IssueByInfo.ID
 		info.Number = resp.IssueByInfo.Number
 		info.Title = resp.IssueByInfo.Title
 		info.RepoName = resp.IssueByInfo.Repository.Name

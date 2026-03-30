@@ -200,6 +200,9 @@ func runIssueConnect(cmd *cobra.Command, args []string) error {
 		},
 	})
 	if err != nil {
+		if api.IsGraphQLNotUnique(err) {
+			return exitcode.Generalf("%s is already connected to %s", pr.Ref(), issue.Ref())
+		}
 		return exitcode.General("connecting PR to issue", err)
 	}
 

@@ -202,6 +202,24 @@ func IsGraphQLNotFound(err error) bool {
 	return false
 }
 
+// IsNotUnique returns true if any of the GraphQL errors indicate a uniqueness constraint violation.
+func (e *GraphQLError) IsNotUnique() bool {
+	for _, err := range e.Errors {
+		if err.Extensions.Code == "NOT_UNIQUE" || err.Message == "Not unique" {
+			return true
+		}
+	}
+	return false
+}
+
+// IsGraphQLNotUnique checks whether an error is a GraphQL uniqueness constraint violation.
+func IsGraphQLNotUnique(err error) bool {
+	if gqlErr, ok := err.(*GraphQLError); ok {
+		return gqlErr.IsNotUnique()
+	}
+	return false
+}
+
 func (c *Client) log(format string, args ...any) {
 	if c.logFunc != nil {
 		c.logFunc(format, args...)

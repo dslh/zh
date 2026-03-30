@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/dslh/zh/internal/api"
 	"github.com/dslh/zh/internal/cache"
 	"github.com/dslh/zh/internal/config"
 	"github.com/dslh/zh/internal/exitcode"
@@ -203,6 +204,9 @@ func runPipelineCreate(cmd *cobra.Command, args []string) error {
 		"input": input,
 	})
 	if err != nil {
+		if api.IsGraphQLNotUnique(err) {
+			return exitcode.Generalf("a pipeline named %q already exists", name)
+		}
 		return exitcode.General("creating pipeline", err)
 	}
 

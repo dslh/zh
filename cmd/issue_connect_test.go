@@ -127,6 +127,32 @@ func TestIssueConnectJSON(t *testing.T) {
 	}
 }
 
+func TestIssueConnectAlreadyConnected(t *testing.T) {
+	resetIssueFlags()
+	resetIssueConnectFlags()
+
+	ms := setupIssueConnectServerNotUnique(t)
+	setupIssueTestEnv(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetArgs([]string{"issue", "connect", "task-tracker#1", "task-tracker#5"})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("connect should error when PR is already connected")
+	}
+	if !strings.Contains(err.Error(), "already connected") {
+		t.Errorf("error should mention already connected, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "task-tracker#5") {
+		t.Errorf("error should mention the PR ref, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "task-tracker#1") {
+		t.Errorf("error should mention the issue ref, got: %v", err)
+	}
+}
+
 func TestIssueConnectHelp(t *testing.T) {
 	resetIssueFlags()
 	resetIssueConnectFlags()
@@ -420,6 +446,74 @@ func setupIssueDisconnectServer(t *testing.T) *testutil.MockServer {
 	)
 
 	ms.HandleQuery("DeleteIssuePrConnection", disconnectMutationResponse())
+
+	_ = cache.Set(resolve.RepoCacheKey("ws-123"), []resolve.CachedRepo{
+		{ID: "r1", GhID: 12345, Name: "task-tracker", OwnerName: "dlakehammond"},
+	})
+
+	return ms
+}
+
+func setupIssueConnectServerNotUnique(t *testing.T) *testutil.MockServer {
+	t.Helper()
+
+	ms := testutil.NewMockServer(t)
+
+	ms.HandleQuery("ListRepos", repoResolutionResponse())
+
+	resolveCallCount := 0
+	ms.Handle(
+		func(req testutil.GraphQLRequest) bool {
+			return strings.Contains(req.Query, "GetIssueForConnect") && !strings.Contains(req.Query, "ByNode")
+		},
+		func(w http.ResponseWriter, req testutil.GraphQLRequest) {
+			resolveCallCount++
+			var resp map[string]any
+			if resolveCallCount%2 == 1 {
+				resp = issueConnectResolveResponse("i1", 1, "Fix login button alignment", false)
+			} else {
+				resp = issueConnectResolveResponse("pr5", 5, "Fix button CSS", true)
+			}
+			data, _ := json.Marshal(resp)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(data)
+		},
+	)
+
+	issueByInfoCallCount := 0
+	ms.Handle(
+		func(req testutil.GraphQLRequest) bool {
+			return strings.Contains(req.Query, "IssueByInfo") && !strings.Contains(req.Query, "GetIssueForConnect")
+		},
+		func(w http.ResponseWriter, req testutil.GraphQLRequest) {
+			issueByInfoCallCount++
+			var resp map[string]any
+			if issueByInfoCallCount%2 == 1 {
+				resp = issueByInfoResolutionResponse()
+			} else {
+				resp = issueByInfoPRResolutionResponse()
+			}
+			data, _ := json.Marshal(resp)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(data)
+		},
+	)
+
+	// Return a "Not unique" GraphQL error for the mutation
+	ms.Handle(
+		func(req testutil.GraphQLRequest) bool {
+			return strings.Contains(req.Query, "CreateIssuePrConnection")
+		},
+		func(w http.ResponseWriter, _ testutil.GraphQLRequest) {
+			resp := map[string]any{
+				"data":   nil,
+				"errors": []map[string]any{{"message": "Not unique"}},
+			}
+			data, _ := json.Marshal(resp)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(data)
+		},
+	)
 
 	_ = cache.Set(resolve.RepoCacheKey("ws-123"), []resolve.CachedRepo{
 		{ID: "r1", GhID: 12345, Name: "task-tracker", OwnerName: "dlakehammond"},

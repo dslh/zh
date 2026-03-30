@@ -372,6 +372,9 @@ func runIssueBlock(cmd *cobra.Command, args []string) error {
 		},
 	})
 	if err != nil {
+		if api.IsGraphQLNotUnique(err) {
+			return exitcode.Generalf("%s already blocks %s", blocker.Ref, blocked.Ref)
+		}
 		return exitcode.General("creating blockage", err)
 	}
 

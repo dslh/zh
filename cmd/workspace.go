@@ -396,10 +396,19 @@ func init() {
 	workspaceStatsCmd.Flags().IntVar(&workspaceStatsSprints, "sprints", 6, "Number of recent closed sprints for velocity trend")
 	workspaceStatsCmd.Flags().IntVar(&workspaceStatsDays, "days", 30, "Cycle time window in days")
 
+	workspaceRepoAddCmd.Flags().IntVar(&workspaceRepoAddGhID, "gh-id", 0, "GitHub repository database ID (skips owner/repo lookup)")
+	workspaceRepoAddCmd.Flags().BoolVar(&workspaceRepoAddDryRun, "dry-run", false, "Show what would be added without executing")
+	workspaceRepoRemoveCmd.Flags().IntVar(&workspaceRepoRemoveGhID, "gh-id", 0, "GitHub repository database ID (skips owner/repo lookup)")
+	workspaceRepoRemoveCmd.Flags().BoolVar(&workspaceRepoRemoveDryRun, "dry-run", false, "Show what would be removed without executing")
+
+	workspaceRepoCmd.AddCommand(workspaceRepoAddCmd)
+	workspaceRepoCmd.AddCommand(workspaceRepoRemoveCmd)
+
 	workspaceCmd.AddCommand(workspaceListCmd)
 	workspaceCmd.AddCommand(workspaceShowCmd)
 	workspaceCmd.AddCommand(workspaceSwitchCmd)
 	workspaceCmd.AddCommand(workspaceReposCmd)
+	workspaceCmd.AddCommand(workspaceRepoCmd)
 	workspaceCmd.AddCommand(workspaceStatsCmd)
 	rootCmd.AddCommand(workspaceCmd)
 }

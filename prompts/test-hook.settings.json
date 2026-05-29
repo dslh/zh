@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "prompts/test-hook.sh",
+            "timeout": 120,
+            "statusMessage": "Running build/vet/test..."
+          }
+        ]
+      }
+    ]
+  }
+}

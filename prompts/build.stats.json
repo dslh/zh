@@ -1,0 +1,395 @@
+{
+  "sessions": [
+    {
+      "timestamp": "2026-02-10T00:01:26+01:00",
+      "duration_s": 420.3,
+      "turns": 75,
+      "cost_usd": 2.6344,
+      "input_tokens": 74,
+      "output_tokens": 16766
+    },
+    {
+      "timestamp": "2026-02-10T00:01:26+01:00",
+      "duration_s": 561.3,
+      "turns": 58,
+      "cost_usd": 2.1623,
+      "input_tokens": 48,
+      "output_tokens": 17509
+    },
+    {
+      "timestamp": "2026-02-10T00:01:26+01:00",
+      "duration_s": 335.455,
+      "turns": 49,
+      "cost_usd": 2.4146185500000006,
+      "input_tokens": 83,
+      "output_tokens": 15092
+    },
+    {
+      "timestamp": "2026-02-10T00:08:25+01:00",
+      "duration_s": 417.359,
+      "turns": 56,
+      "cost_usd": 2.76035375,
+      "input_tokens": 1780,
+      "output_tokens": 16360
+    },
+    {
+      "timestamp": "2026-02-10T00:13:35+01:00",
+      "duration_s": 308.743,
+      "turns": 51,
+      "cost_usd": 1.870993650000001,
+      "input_tokens": 35,
+      "output_tokens": 10819
+    },
+    {
+      "timestamp": "2026-02-10T00:23:14+01:00",
+      "duration_s": 577.614,
+      "turns": 79,
+      "cost_usd": 4.06995755,
+      "input_tokens": 11616,
+      "output_tokens": 29060
+    },
+    {
+      "timestamp": "2026-02-10T00:34:22+01:00",
+      "duration_s": 666.629,
+      "turns": 80,
+      "cost_usd": 5.492660299999998,
+      "input_tokens": 939,
+      "output_tokens": 29892
+    },
+    {
+      "timestamp": "2026-02-10T00:42:33+01:00",
+      "duration_s": 488.929,
+      "turns": 55,
+      "cost_usd": 3.50611995,
+      "input_tokens": 44,
+      "output_tokens": 22642
+    },
+    {
+      "timestamp": "2026-02-10T00:51:07+01:00",
+      "duration_s": 513.127,
+      "turns": 76,
+      "cost_usd": 4.750756900000002,
+      "input_tokens": 67,
+      "output_tokens": 23850
+    },
+    {
+      "timestamp": "2026-02-10T00:57:08+01:00",
+      "duration_s": 359.601,
+      "turns": 41,
+      "cost_usd": 2.2983525,
+      "input_tokens": 31,
+      "output_tokens": 21500
+    },
+    {
+      "timestamp": "2026-02-10T01:04:23+01:00",
+      "duration_s": 432.86,
+      "turns": 63,
+      "cost_usd": 3.7527410500000005,
+      "input_tokens": 47,
+      "output_tokens": 21235
+    },
+    {
+      "timestamp": "2026-02-10T01:13:04+01:00",
+      "duration_s": 518.968,
+      "turns": 72,
+      "cost_usd": 4.809902000000005,
+      "input_tokens": 1447,
+      "output_tokens": 28403
+    },
+    {
+      "timestamp": "2026-02-10T01:22:41+01:00",
+      "duration_s": 576.54,
+      "turns": 81,
+      "cost_usd": 5.446577700000001,
+      "input_tokens": 60,
+      "output_tokens": 31360
+    },
+    {
+      "timestamp": "2026-02-10T01:32:27+01:00",
+      "duration_s": 584.094,
+      "turns": 66,
+      "cost_usd": 5.229323999999999,
+      "input_tokens": 54,
+      "output_tokens": 29613
+    },
+    {
+      "timestamp": "2026-02-10T01:38:24+01:00",
+      "duration_s": 355.38,
+      "turns": 32,
+      "cost_usd": 2.9059002499999997,
+      "input_tokens": 24,
+      "output_tokens": 13282
+    },
+    {
+      "timestamp": "2026-02-10T01:38:27+01:00",
+      "duration_s": 1.806,
+      "turns": 1,
+      "cost_usd": 0,
+      "input_tokens": 0,
+      "output_tokens": 0
+    },
+    {
+      "timestamp": "2026-02-10T01:38:30+01:00",
+      "duration_s": 1.713,
+      "turns": 1,
+      "cost_usd": 0,
+      "input_tokens": 0,
+      "output_tokens": 0
+    },
+    {
+      "timestamp": "2026-02-10T01:38:33+01:00",
+      "duration_s": 1.49,
+      "turns": 1,
+      "cost_usd": 0,
+      "input_tokens": 0,
+      "output_tokens": 0
+    },
+    {
+      "timestamp": "2026-02-10T01:38:36+01:00",
+      "duration_s": 1.53,
+      "turns": 1,
+      "cost_usd": 0,
+      "input_tokens": 0,
+      "output_tokens": 0
+    },
+    {
+      "timestamp": "2026-02-10T01:38:39+01:00",
+      "duration_s": 1.432,
+      "turns": 1,
+      "cost_usd": 0,
+      "input_tokens": 0,
+      "output_tokens": 0
+    },
+    {
+      "timestamp": "2026-02-10T01:38:43+01:00",
+      "duration_s": 2.392,
+      "turns": 1,
+      "cost_usd": 0,
+      "input_tokens": 0,
+      "output_tokens": 0
+    },
+    {
+      "timestamp": "2026-02-10T01:38:46+01:00",
+      "duration_s": 1.502,
+      "turns": 1,
+      "cost_usd": 0,
+      "input_tokens": 0,
+      "output_tokens": 0
+    },
+    {
+      "timestamp": "2026-02-10T01:38:49+01:00",
+      "duration_s": 1.558,
+      "turns": 1,
+      "cost_usd": 0,
+      "input_tokens": 0,
+      "output_tokens": 0
+    },
+    {
+      "timestamp": "2026-02-10T01:45:57+01:00",
+      "duration_s": 426.051,
+      "turns": 1,
+      "cost_usd": 0,
+      "input_tokens": 0,
+      "output_tokens": 0
+    },
+    {
+      "timestamp": "2026-02-10T01:49:12+01:00",
+      "duration_s": 193.709,
+      "turns": 32,
+      "cost_usd": 1.2102132999999995,
+      "input_tokens": 27,
+      "output_tokens": 4943
+    },
+    {
+      "timestamp": "2026-02-10T02:09:11+01:00",
+      "duration_s": 1197.678,
+      "turns": 163,
+      "cost_usd": 12.295630500000003,
+      "input_tokens": 154,
+      "output_tokens": 51982
+    },
+    {
+      "timestamp": "2026-02-10T02:17:15+01:00",
+      "duration_s": 483.082,
+      "turns": 52,
+      "cost_usd": 4.115111849999999,
+      "input_tokens": 786,
+      "output_tokens": 28438
+    },
+    {
+      "timestamp": "2026-02-10T02:35:36+01:00",
+      "duration_s": 1098.769,
+      "turns": 124,
+      "cost_usd": 8.939871500000004,
+      "input_tokens": 1079,
+      "output_tokens": 48468
+    },
+    {
+      "timestamp": "2026-02-10T02:43:28+01:00",
+      "duration_s": 470.963,
+      "turns": 66,
+      "cost_usd": 4.172971949999999,
+      "input_tokens": 54,
+      "output_tokens": 25003
+    },
+    {
+      "timestamp": "2026-02-10T02:54:28+01:00",
+      "duration_s": 658.926,
+      "turns": 91,
+      "cost_usd": 7.560148700000003,
+      "input_tokens": 74,
+      "output_tokens": 31515
+    },
+    {
+      "timestamp": "2026-02-10T03:02:13+01:00",
+      "duration_s": 462.869,
+      "turns": 71,
+      "cost_usd": 4.5650313,
+      "input_tokens": 61,
+      "output_tokens": 17136
+    },
+    {
+      "timestamp": "2026-02-10T03:09:18+01:00",
+      "duration_s": 423.621,
+      "turns": 69,
+      "cost_usd": 4.136098800000001,
+      "input_tokens": 3833,
+      "output_tokens": 20626
+    },
+    {
+      "timestamp": "2026-02-10T03:18:21+01:00",
+      "duration_s": 541.937,
+      "turns": 65,
+      "cost_usd": 4.3207291,
+      "input_tokens": 58,
+      "output_tokens": 28320
+    },
+    {
+      "timestamp": "2026-02-10T03:25:04+01:00",
+      "duration_s": 401.781,
+      "turns": 59,
+      "cost_usd": 4.2290261000000005,
+      "input_tokens": 739,
+      "output_tokens": 19505
+    },
+    {
+      "timestamp": "2026-02-10T03:37:26+01:00",
+      "duration_s": 740.582,
+      "turns": 95,
+      "cost_usd": 6.143663949999998,
+      "input_tokens": 2430,
+      "output_tokens": 38667
+    },
+    {
+      "timestamp": "2026-02-10T03:44:00+01:00",
+      "duration_s": 392.144,
+      "turns": 48,
+      "cost_usd": 2.9225566000000005,
+      "input_tokens": 43,
+      "output_tokens": 19306
+    },
+    {
+      "timestamp": "2026-02-10T03:50:44+01:00",
+      "duration_s": 403.146,
+      "turns": 58,
+      "cost_usd": 3.2837371,
+      "input_tokens": 2283,
+      "output_tokens": 20981
+    },
+    {
+      "timestamp": "2026-02-10T03:56:13+01:00",
+      "duration_s": 326.761,
+      "turns": 43,
+      "cost_usd": 2.7433200500000003,
+      "input_tokens": 35,
+      "output_tokens": 17261
+    },
+    {
+      "timestamp": "2026-02-10T04:04:59+01:00",
+      "duration_s": 524.991,
+      "turns": 50,
+      "cost_usd": 3.401945850000001,
+      "input_tokens": 190,
+      "output_tokens": 27938
+    },
+    {
+      "timestamp": "2026-02-10T04:09:34+01:00",
+      "duration_s": 273.267,
+      "turns": 44,
+      "cost_usd": 1.6962640500000001,
+      "input_tokens": 35,
+      "output_tokens": 11568
+    },
+    {
+      "timestamp": "2026-02-10T04:19:19+01:00",
+      "duration_s": 583.757,
+      "turns": 93,
+      "cost_usd": 5.066186150000001,
+      "input_tokens": 73,
+      "output_tokens": 24632
+    },
+    {
+      "timestamp": "2026-02-10T04:31:27+01:00",
+      "duration_s": 726.742,
+      "turns": 103,
+      "cost_usd": 6.896352899999998,
+      "input_tokens": 1033,
+      "output_tokens": 30563
+    },
+    {
+      "timestamp": "2026-02-10T04:43:03+01:00",
+      "duration_s": 694.518,
+      "turns": 143,
+      "cost_usd": 7.812521650000001,
+      "input_tokens": 1559,
+      "output_tokens": 33089
+    },
+    {
+      "timestamp": "2026-02-10T04:51:31+01:00",
+      "duration_s": 507.056,
+      "turns": 75,
+      "cost_usd": 4.420378999999998,
+      "input_tokens": 1568,
+      "output_tokens": 21963
+    },
+    {
+      "timestamp": "2026-02-10T04:59:57+01:00",
+      "duration_s": 504.489,
+      "turns": 73,
+      "cost_usd": 5.204529399999999,
+      "input_tokens": 1505,
+      "output_tokens": 25821
+    },
+    {
+      "timestamp": "2026-02-10T05:02:42+01:00",
+      "duration_s": 162.833,
+      "turns": 31,
+      "cost_usd": 0.7928556000000001,
+      "input_tokens": 25,
+      "output_tokens": 6118
+    },
+    {
+      "timestamp": "2026-02-10T05:14:02+01:00",
+      "duration_s": 679.16,
+      "turns": 117,
+      "cost_usd": 8.019981100000003,
+      "input_tokens": 106,
+      "output_tokens": 30146
+    },
+    {
+      "timestamp": "2026-02-10T05:26:23+01:00",
+      "duration_s": 739.238,
+      "turns": 88,
+      "cost_usd": 7.341279750000006,
+      "input_tokens": 85,
+      "output_tokens": 31294
+    }
+  ],
+  "totals": {
+    "duration_s": 20748.392,
+    "turns": 2796,
+    "cost_usd": 175.39536440000003,
+    "input_tokens": 34184,
+    "output_tokens": 942666
+  }
+}

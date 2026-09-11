@@ -66,7 +66,14 @@ zh activity --pipeline="In Dev"     # Filter to one pipeline
 zh activity --repo=mpt              # Filter to one repo
 zh activity --github                # Include GitHub-only activity
 zh activity --detail                # Per-issue event timelines
+zh activity --user=alice            # Only what one person touched
 ```
+
+`--user` keeps an issue if that person acted on it or on any pull request
+connected to it, and vice versa. Everything shown keeps its full timeline,
+including events from other people. Matching needs event timelines, so
+`--user` is as slow as `--detail`; GitHub timelines are pulled in
+automatically when GitHub access is configured.
 
 ### Issues
 

@@ -160,6 +160,14 @@ updated_at ordering.
 Use --detail to fetch per-issue event timelines showing exactly
 what changed (pipeline moves, estimate changes, comments, etc.).
 
+Use --user to show only the issues and pull requests one person
+touched in the time range. A PR they touched also surfaces the
+issue it is connected to, and an issue they touched keeps its
+connected PRs. Everything shown keeps its full timeline, including
+events from other people. Working out who did what needs event
+timelines, so --user costs the same as --detail; GitHub timelines
+are included automatically when GitHub access is configured.
+
 Examples:
   zh activity                          # last 24 hours
   zh activity --from=7d               # last 7 days
@@ -167,7 +175,8 @@ Examples:
   zh activity --from=2026-02-01       # since a specific date
   zh activity --github                # include GitHub activity
   zh activity --detail                # show per-issue events
-  zh activity --pipeline="In Progress" # filter to one pipeline`,
+  zh activity --pipeline="In Progress" # filter to one pipeline
+  zh activity --user=alice            # only what alice touched`,
 	RunE: runActivity,
 }
 
@@ -178,6 +187,7 @@ var (
 	activityDetail   bool
 	activityPipeline string
 	activityRepo     string
+	activityUser     string
 )
 
 func init() {
@@ -187,6 +197,7 @@ func init() {
 	activityCmd.Flags().BoolVar(&activityDetail, "detail", false, "Fetch per-issue event timelines (slower)")
 	activityCmd.Flags().StringVar(&activityPipeline, "pipeline", "", "Filter to a specific pipeline")
 	activityCmd.Flags().StringVar(&activityRepo, "repo", "", "Filter to a specific repository")
+	activityCmd.Flags().StringVar(&activityUser, "user", "", "Only show issues and PRs touched by this GitHub user (slower)")
 
 	rootCmd.AddCommand(activityCmd)
 }
@@ -198,6 +209,7 @@ func resetActivityFlags() {
 	activityDetail = false
 	activityPipeline = ""
 	activityRepo = ""
+	activityUser = ""
 }
 
 // parseTimeFlag parses a time flag value into a time.Time.
@@ -277,6 +289,11 @@ func runActivity(cmd *cobra.Command, args []string) error {
 	toTime, err := parseTimeFlag(activityTo, now)
 	if err != nil {
 		return exitcode.Usage(fmt.Sprintf("invalid --to value: %v", err))
+	}
+
+	userFilter := strings.TrimPrefix(strings.TrimSpace(activityUser), "@")
+	if userFilter != "" && ghClient == nil {
+		fmt.Fprintln(cmd.ErrOrStderr(), output.Yellow("Warning: --user can only match ZenHub events — GitHub access not configured"))
 	}
 
 	// Resolve repo filter
@@ -399,11 +416,24 @@ func runActivity(cmd *cobra.Command, args []string) error {
 		return issues[i].UpdatedAt.After(issues[j].UpdatedAt)
 	})
 
-	// Step 3: Detail mode — fetch per-issue timelines
-	if activityDetail && len(issues) > 0 {
-		fetchActivityTimelines(client, ghClient, activityGitHub, &issues, fromTime, toTime)
-		fetchMissingParentIssues(client, ghClient, activityGitHub, &issues, fromTime, toTime)
-		nestConnectedPRs(&issues)
+	// Step 3: Detail mode — fetch per-issue timelines.
+	// A user filter matches on event actors, so it needs the timelines too,
+	// and most of what counts as "touched" (comments, reviews, merges) only
+	// shows up on the GitHub side — pull those in whenever they're reachable.
+	needTimelines := activityDetail || userFilter != ""
+	ghTimelines := activityGitHub || (userFilter != "" && ghClient != nil)
+
+	if needTimelines && len(issues) > 0 {
+		fetchActivityTimelines(client, ghClient, ghTimelines, &issues, fromTime, toTime)
+		if activityDetail {
+			fetchMissingParentIssues(client, ghClient, ghTimelines, &issues, fromTime, toTime)
+		}
+		if userFilter != "" {
+			issues = filterActivityByUser(issues, userFilter)
+		}
+		if activityDetail {
+			nestConnectedPRs(&issues)
+		}
 	}
 
 	w := cmd.OutOrStdout()
@@ -411,7 +441,7 @@ func runActivity(cmd *cobra.Command, args []string) error {
 	// JSON output
 	if output.IsJSON(outputFormat) {
 		pipelineCount := countPipelines(issues)
-		return output.JSON(w, map[string]any{
+		result := map[string]any{
 			"from":   fromTime.Format(time.RFC3339),
 			"to":     toTime.Format(time.RFC3339),
 			"issues": issues,
@@ -419,12 +449,20 @@ func runActivity(cmd *cobra.Command, args []string) error {
 				"issueCount":    len(issues),
 				"pipelineCount": pipelineCount,
 			},
-		})
+		}
+		if userFilter != "" {
+			result["user"] = userFilter
+		}
+		return output.JSON(w, result)
 	}
 
 	// Render output
 	if len(issues) == 0 {
-		fmt.Fprintf(w, "No activity found since %s.\n", output.FormatDate(fromTime))
+		if userFilter != "" {
+			fmt.Fprintf(w, "No activity by @%s found since %s.\n", userFilter, output.FormatDate(fromTime))
+		} else {
+			fmt.Fprintf(w, "No activity found since %s.\n", output.FormatDate(fromTime))
+		}
 		return nil
 	}
 
@@ -435,9 +473,9 @@ func runActivity(cmd *cobra.Command, args []string) error {
 	}
 
 	if activityDetail {
-		renderActivityDetail(w, issues, fromTime, toTime, activityGitHub && ghClient != nil, pipelineNameOrder)
+		renderActivityDetail(w, issues, fromTime, toTime, activityGitHub && ghClient != nil, pipelineNameOrder, userFilter)
 	} else {
-		renderActivitySummary(w, issues, fromTime, toTime, pipelineNameOrder)
+		renderActivitySummary(w, issues, fromTime, toTime, pipelineNameOrder, userFilter)
 	}
 
 	return nil
@@ -1251,6 +1289,82 @@ func nestConnectedPRs(issues *[]activityIssue) {
 	*issues = result
 }
 
+// filterActivityByUser keeps only the issues and pull requests that the given
+// user touched. An issue and the PRs connected to it count as one unit: a match
+// anywhere in the unit keeps every item in it, so a PR the user worked on brings
+// along its parent issue, and everything kept keeps its full timeline — including
+// events from other people.
+//
+// Matching is on event actors, so this must run after the timelines are fetched
+// and before PRs are nested under their parent issues.
+func filterActivityByUser(issues []activityIssue, user string) []activityIssue {
+	refIdx := make(map[string]int, len(issues))
+	for i, item := range issues {
+		refIdx[item.Ref] = i
+	}
+
+	// Undirected links between issues and their connected PRs. Both directions
+	// are recorded because only one side of a connection may be known: PRs carry
+	// ConnectedIssue, issues carry ConnectedPRRefs.
+	adj := make(map[int][]int)
+	link := func(a, b int) {
+		adj[a] = append(adj[a], b)
+		adj[b] = append(adj[b], a)
+	}
+	for i, item := range issues {
+		if item.ConnectedIssue != "" {
+			if j, ok := refIdx[item.ConnectedIssue]; ok {
+				link(i, j)
+			}
+		}
+		for _, prRef := range item.ConnectedPRRefs {
+			if j, ok := refIdx[prRef.Ref]; ok {
+				link(i, j)
+			}
+		}
+	}
+
+	// Seed with the items the user touched directly, then spread across each
+	// connected unit.
+	keep := make([]bool, len(issues))
+	var queue []int
+	for i, item := range issues {
+		if activityTouchedBy(item, user) {
+			keep[i] = true
+			queue = append(queue, i)
+		}
+	}
+	for len(queue) > 0 {
+		i := queue[0]
+		queue = queue[1:]
+		for _, j := range adj[i] {
+			if !keep[j] {
+				keep[j] = true
+				queue = append(queue, j)
+			}
+		}
+	}
+
+	var result []activityIssue
+	for i, item := range issues {
+		if keep[i] {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+// activityTouchedBy reports whether the user acted on the issue during the
+// time range.
+func activityTouchedBy(issue activityIssue, user string) bool {
+	for _, ev := range issue.Events {
+		if strings.EqualFold(ev.Actor, user) {
+			return true
+		}
+	}
+	return false
+}
+
 // Rendering functions
 
 const prConnectionQuery = `query PRConnections($id: ID!) {
@@ -1414,8 +1528,16 @@ func formatActivityPrefix(issue activityIssue) string {
 	return ""
 }
 
-func renderActivitySummary(w interface{ Write([]byte) (int, error) }, issues []activityIssue, fromTime, toTime time.Time, pipelineNameOrder []string) {
-	fmt.Fprintf(w, "Activity since %s\n\n", output.FormatDate(fromTime))
+// activityHeading returns the heading line, naming the user when filtering.
+func activityHeading(fromTime time.Time, user string) string {
+	if user != "" {
+		return fmt.Sprintf("Activity by @%s since %s", user, output.FormatDate(fromTime))
+	}
+	return fmt.Sprintf("Activity since %s", output.FormatDate(fromTime))
+}
+
+func renderActivitySummary(w interface{ Write([]byte) (int, error) }, issues []activityIssue, fromTime, toTime time.Time, pipelineNameOrder []string, user string) {
+	fmt.Fprintf(w, "%s\n\n", activityHeading(fromTime, user))
 
 	groups, pipelineOrder := groupByPipeline(issues, pipelineNameOrder)
 
@@ -1448,8 +1570,8 @@ func renderActivitySummary(w interface{ Write([]byte) (int, error) }, issues []a
 	fmt.Fprintf(w, "\n%d issue(s) updated across %d pipeline(s)\n", len(issues), len(pipelineOrder))
 }
 
-func renderActivityDetail(w interface{ Write([]byte) (int, error) }, issues []activityIssue, fromTime, toTime time.Time, showSource bool, pipelineNameOrder []string) {
-	fmt.Fprintf(w, "Activity since %s\n", output.FormatDate(fromTime))
+func renderActivityDetail(w interface{ Write([]byte) (int, error) }, issues []activityIssue, fromTime, toTime time.Time, showSource bool, pipelineNameOrder []string, user string) {
+	fmt.Fprintf(w, "%s\n", activityHeading(fromTime, user))
 
 	groups, pipelineOrder := groupByPipeline(issues, pipelineNameOrder)
 

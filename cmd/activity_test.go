@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -1337,6 +1338,381 @@ func TestNestConnectedPRsConsolidate(t *testing.T) {
 }
 
 // TestActivityHelp must be last — Cobra's --help flag leaks across Execute() calls.
+// --- --user filter ---
+
+// zhTimelineEvent builds a ZenHub timeline item attributed to an actor.
+func zhTimelineEvent(id, key, createdAt, actor string, data map[string]any) map[string]any {
+	if data == nil {
+		data = map[string]any{}
+	}
+	data["github_user"] = map[string]any{"login": actor}
+	return map[string]any{
+		"id":        id,
+		"key":       key,
+		"createdAt": createdAt,
+		"data":      data,
+	}
+}
+
+// zhTimelineResponse builds a GetIssueTimelineByNode response for one node.
+func zhTimelineResponse(id string, number int, title string, events []any) map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"__typename": "Issue",
+				"id":         id,
+				"number":     number,
+				"title":      title,
+				"repository": map[string]any{
+					"name":  "task-tracker",
+					"owner": map[string]any{"login": "dlakehammond"},
+				},
+				"timelineItems": map[string]any{
+					"totalCount": len(events),
+					"pageInfo":   map[string]any{"hasNextPage": false, "endCursor": ""},
+					"nodes":      events,
+				},
+			},
+		},
+	}
+}
+
+// handleTimelinesByNode routes GetIssueTimelineByNode to a per-node response,
+// so issues in the same run can have different actors on their events.
+func handleTimelinesByNode(ms *testutil.MockServer, byID map[string]map[string]any) {
+	ms.Handle(
+		func(req testutil.GraphQLRequest) bool {
+			return strings.Contains(req.Query, "GetIssueTimelineByNode")
+		},
+		func(w http.ResponseWriter, req testutil.GraphQLRequest) {
+			var vars struct {
+				ID string `json:"id"`
+			}
+			_ = json.Unmarshal(req.Variables, &vars)
+			resp, ok := byID[vars.ID]
+			if !ok {
+				resp = map[string]any{"data": map[string]any{"node": nil}}
+			}
+			body, _ := json.Marshal(resp)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(body)
+		},
+	)
+}
+
+func emptyConnectedPRsResponse() map[string]any {
+	return map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"connectedPrs": map[string]any{"nodes": []any{}},
+			},
+		},
+	}
+}
+
+func TestActivityUserFilterDetail(t *testing.T) {
+	resetActivityFlags()
+
+	ms := testutil.NewMockServer(t)
+
+	now := time.Now().UTC()
+	recent := now.Add(-2 * time.Hour).Format(time.RFC3339)
+
+	ms.HandleQuery("ActivitySearch", activityPipelineSearchResponse("In Progress", []map[string]any{
+		makeActivityIssueNode("i1", 42, "Fix login page", "task-tracker", "dlakehammond", recent, "In Progress"),
+		makeActivityIssueNode("i2", 38, "Add dark mode", "task-tracker", "dlakehammond", recent, "In Progress"),
+	}))
+	ms.HandleQuery("ActivityClosed", activityClosedResponse(nil))
+
+	// #42 was touched by alice and by bob; #38 only by bob.
+	handleTimelinesByNode(ms, map[string]map[string]any{
+		"i1": zhTimelineResponse("i1", 42, "Fix login page", []any{
+			zhTimelineEvent("t1", "issue.change_pipeline", recent, "alice", map[string]any{
+				"from_pipeline": map[string]any{"name": "Backlog"},
+				"to_pipeline":   map[string]any{"name": "In Progress"},
+			}),
+			zhTimelineEvent("t2", "issue.set_estimate", recent, "bob", map[string]any{
+				"current_value": "5",
+			}),
+		}),
+		"i2": zhTimelineResponse("i2", 38, "Add dark mode", []any{
+			zhTimelineEvent("t3", "issue.set_estimate", recent, "bob", map[string]any{
+				"current_value": "3",
+			}),
+		}),
+	})
+	ms.HandleQuery("IssueConnectedPRs", emptyConnectedPRsResponse())
+
+	setupActivityTestEnv(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(new(bytes.Buffer))
+	rootCmd.SetArgs([]string{"activity", "--detail", "--user=alice"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("activity --user returned error: %v", err)
+	}
+
+	out := buf.String()
+
+	if !strings.Contains(out, "Activity by @alice since") {
+		t.Errorf("heading should name the filtered user, got: %s", out)
+	}
+	if !strings.Contains(out, "task-tracker#42") {
+		t.Errorf("output should contain the issue alice touched, got: %s", out)
+	}
+	// #38 is assigned to alice but she never acted on it.
+	if strings.Contains(out, "task-tracker#38") {
+		t.Errorf("output should not contain an issue alice never touched, got: %s", out)
+	}
+	// Other people's events on the kept issue are still shown.
+	if !strings.Contains(out, "@bob") {
+		t.Errorf("output should keep other users' events on matched issues, got: %s", out)
+	}
+	if !strings.Contains(out, "set estimate to 5") {
+		t.Errorf("output should keep bob's estimate event on #42, got: %s", out)
+	}
+}
+
+func TestActivityUserFilterKeepsConnectedPR(t *testing.T) {
+	resetActivityFlags()
+
+	ms := testutil.NewMockServer(t)
+
+	now := time.Now().UTC()
+	recent := now.Add(-2 * time.Hour).Format(time.RFC3339)
+
+	// Issue #42 with a connected PR #100, plus an unrelated issue #38.
+	ms.HandleQuery("ActivitySearch", activityPipelineSearchResponse("In Progress", []map[string]any{
+		makeActivityIssueNode("i1", 42, "Fix login page", "task-tracker", "dlakehammond", recent, "In Progress"),
+		makeActivityIssueNode("i2", 38, "Add dark mode", "task-tracker", "dlakehammond", recent, "In Progress"),
+		makeActivityPRNode("pr1", 100, "Fix login CSS", "task-tracker", "dlakehammond", recent, "In Progress"),
+	}))
+	ms.HandleQuery("ActivityClosed", activityClosedResponse(nil))
+
+	// Only the PR was touched by alice. The issue and #38 were touched by bob.
+	handleTimelinesByNode(ms, map[string]map[string]any{
+		"i1": zhTimelineResponse("i1", 42, "Fix login page", []any{
+			zhTimelineEvent("t1", "issue.set_estimate", recent, "bob", map[string]any{
+				"current_value": "5",
+			}),
+		}),
+		"i2": zhTimelineResponse("i2", 38, "Add dark mode", []any{
+			zhTimelineEvent("t2", "issue.set_estimate", recent, "bob", map[string]any{
+				"current_value": "3",
+			}),
+		}),
+		"pr1": zhTimelineResponse("pr1", 100, "Fix login CSS", []any{
+			zhTimelineEvent("t3", "issue.change_pipeline", recent, "alice", map[string]any{
+				"from_pipeline": map[string]any{"name": "Backlog"},
+				"to_pipeline":   map[string]any{"name": "In Progress"},
+			}),
+		}),
+	})
+
+	// PR #100 → issue #42
+	ms.HandleQuery("PRConnections", map[string]any{
+		"data": map[string]any{
+			"node": map[string]any{
+				"connections": map[string]any{
+					"nodes": []any{
+						map[string]any{
+							"id":         "i1",
+							"number":     42,
+							"title":      "Fix login page",
+							"repository": map[string]any{"name": "task-tracker", "ownerName": "dlakehammond"},
+						},
+					},
+				},
+			},
+		},
+	})
+	// No issue reports connected PRs, so the link comes from the PR side only.
+	ms.HandleQuery("IssueConnectedPRs", emptyConnectedPRsResponse())
+
+	setupActivityTestEnv(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(new(bytes.Buffer))
+	rootCmd.SetArgs([]string{"activity", "--detail", "--user=alice"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("activity --user returned error: %v", err)
+	}
+
+	out := buf.String()
+
+	if !strings.Contains(out, "task-tracker#100") {
+		t.Errorf("output should contain the PR alice touched, got: %s", out)
+	}
+	// The PR pulls its parent issue in even though alice never touched it.
+	if !strings.Contains(out, "task-tracker#42") {
+		t.Errorf("output should contain the parent issue of the matched PR, got: %s", out)
+	}
+	if !strings.Contains(out, "└─") {
+		t.Errorf("matched PR should be nested under its parent, got: %s", out)
+	}
+	// The parent keeps bob's event.
+	if !strings.Contains(out, "set estimate to 5") {
+		t.Errorf("parent issue should keep other users' events, got: %s", out)
+	}
+	// The unrelated issue is dropped.
+	if strings.Contains(out, "task-tracker#38") {
+		t.Errorf("output should not contain an unconnected issue alice never touched, got: %s", out)
+	}
+}
+
+func TestActivityUserFilterSummary(t *testing.T) {
+	resetActivityFlags()
+
+	ms := testutil.NewMockServer(t)
+
+	now := time.Now().UTC()
+	recent := now.Add(-2 * time.Hour).Format(time.RFC3339)
+
+	ms.HandleQuery("ActivitySearch", activityPipelineSearchResponse("In Progress", []map[string]any{
+		makeActivityIssueNode("i1", 42, "Fix login page", "task-tracker", "dlakehammond", recent, "In Progress"),
+		makeActivityIssueNode("i2", 38, "Add dark mode", "task-tracker", "dlakehammond", recent, "In Progress"),
+	}))
+	ms.HandleQuery("ActivityClosed", activityClosedResponse(nil))
+
+	handleTimelinesByNode(ms, map[string]map[string]any{
+		"i1": zhTimelineResponse("i1", 42, "Fix login page", []any{
+			zhTimelineEvent("t1", "issue.set_estimate", recent, "alice", map[string]any{
+				"current_value": "5",
+			}),
+		}),
+		"i2": zhTimelineResponse("i2", 38, "Add dark mode", []any{
+			zhTimelineEvent("t2", "issue.set_estimate", recent, "bob", map[string]any{
+				"current_value": "3",
+			}),
+		}),
+	})
+	ms.HandleQuery("IssueConnectedPRs", emptyConnectedPRsResponse())
+
+	setupActivityTestEnv(t, ms)
+
+	buf := new(bytes.Buffer)
+	errBuf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(errBuf)
+	// Leading "@" is accepted, and the filter works without --detail.
+	rootCmd.SetArgs([]string{"activity", "--user=@Alice"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("activity --user returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Activity by @Alice since") {
+		t.Errorf("summary heading should name the filtered user, got: %s", out)
+	}
+	if !strings.Contains(out, "task-tracker#42") {
+		t.Errorf("summary should contain the issue alice touched, got: %s", out)
+	}
+	if strings.Contains(out, "task-tracker#38") {
+		t.Errorf("summary should not contain an issue alice never touched, got: %s", out)
+	}
+
+	// Without GitHub access the filter can only see ZenHub events; say so.
+	if !strings.Contains(errBuf.String(), "GitHub access not configured") {
+		t.Errorf("stderr should warn that --user only matches ZenHub events, got: %s", errBuf.String())
+	}
+}
+
+func TestActivityUserFilterNoMatches(t *testing.T) {
+	resetActivityFlags()
+
+	ms := testutil.NewMockServer(t)
+
+	now := time.Now().UTC()
+	recent := now.Add(-2 * time.Hour).Format(time.RFC3339)
+
+	ms.HandleQuery("ActivitySearch", activityPipelineSearchResponse("In Progress", []map[string]any{
+		makeActivityIssueNode("i1", 42, "Fix login page", "task-tracker", "dlakehammond", recent, "In Progress"),
+	}))
+	ms.HandleQuery("ActivityClosed", activityClosedResponse(nil))
+	handleTimelinesByNode(ms, map[string]map[string]any{
+		"i1": zhTimelineResponse("i1", 42, "Fix login page", []any{
+			zhTimelineEvent("t1", "issue.set_estimate", recent, "bob", map[string]any{
+				"current_value": "5",
+			}),
+		}),
+	})
+	ms.HandleQuery("IssueConnectedPRs", emptyConnectedPRsResponse())
+
+	setupActivityTestEnv(t, ms)
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(new(bytes.Buffer))
+	rootCmd.SetArgs([]string{"activity", "--user=carol"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("activity --user returned error: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "No activity by @carol found") {
+		t.Errorf("output should report no activity for the user, got: %s", out)
+	}
+}
+
+func TestFilterActivityByUser(t *testing.T) {
+	// #42 ← PR #100 (alice touched the PR only)
+	// #43 → PR #101 (alice touched the issue only; link known from the issue side)
+	// #44 (bob only)
+	issues := []activityIssue{
+		{
+			Ref:    "repo#42",
+			Events: []activityEvent{{Actor: "bob", Description: "set estimate to 5"}},
+		},
+		{
+			Ref:            "repo#100",
+			IsPR:           true,
+			ConnectedIssue: "repo#42",
+			Events:         []activityEvent{{Actor: "Alice", Description: "moved to In Progress"}},
+		},
+		{
+			Ref:             "repo#43",
+			ConnectedPRRefs: []connectedPRRef{{Number: 101, Ref: "repo#101"}},
+			Events:          []activityEvent{{Actor: "alice", Description: "set estimate to 3"}},
+		},
+		{
+			Ref:    "repo#101",
+			IsPR:   true,
+			Events: []activityEvent{{Actor: "bob", Description: "moved to Review"}},
+		},
+		{
+			Ref:    "repo#44",
+			Events: []activityEvent{{Actor: "bob", Description: "set estimate to 8"}},
+		},
+	}
+
+	got := filterActivityByUser(issues, "alice")
+
+	var refs []string
+	for _, item := range got {
+		refs = append(refs, item.Ref)
+	}
+	want := []string{"repo#42", "repo#100", "repo#43", "repo#101"}
+	if strings.Join(refs, ",") != strings.Join(want, ",") {
+		t.Errorf("filterActivityByUser = %v, want %v", refs, want)
+	}
+}
+
+func TestFilterActivityByUserNoMatch(t *testing.T) {
+	issues := []activityIssue{
+		{Ref: "repo#42", Events: []activityEvent{{Actor: "bob"}}},
+		{Ref: "repo#43"},
+	}
+	if got := filterActivityByUser(issues, "alice"); len(got) != 0 {
+		t.Errorf("expected no issues, got %v", got)
+	}
+}
+
 func TestActivityHelp(t *testing.T) {
 	resetActivityFlags()
 
